@@ -1,0 +1,75 @@
+{
+  "brand": {
+    "navy_rgb": [38, 45, 101],
+    "header_bg_rgb": [246, 245, 243],
+    "disclaimer": "Unauthorized partial or total reproduction of these drawings is strictly prohibited without written authorization from Weatherman, Inc."
+  },
+  "artwork_bounds_cm": {"width": 21.6, "height": 10.0},
+  "products": {
+    "walk": {
+      "display_name": "Walk",
+      "subtitle": "Automatic Umbrella",
+      "style_number": "11005",
+      "canopy_panels": 8,
+      "page_size_pts": [2125.98, 3259.84],
+      "panel": {
+        "shape": "trapezoid",
+        "height_cm": 26.5,
+        "top_cm": 21.6,
+        "bottom_cm": 43.5,
+        "artwork_width_cm": 21.6,
+        "artwork_height_cm": 10.0,
+        "logo_height_cm": 6.0,
+        "logo_bottom_offset_cm": 10.0
+      },
+      "sleeve": {
+        "logo_height_cm": 11.0,
+        "logo_bottom_offset_cm": 9.0,
+        "wm_mark": true,
+        "client_logo_on_sleeve": false
+      },
+      "features": [
+        "Single Canopy",
+        "Automatic Opening",
+        "Walk canopy",
+        "WM Walk Handle",
+        "Generic Sleeve"
+      ]
+    },
+    "golf_essential": {
+      "display_name": "Golf Essential",
+      "subtitle": "Single Canopy (Manual)",
+      "style_number": "Golf Essential 1",
+      "canopy_panels": 8,
+      "page_size_pts": [2125.98, 3543.84],
+      "panel": {
+        "shape": "triangle",
+        "height_cm": 83.0,
+        "top_cm": 0.0,
+        "bottom_cm": 59.54,
+        "artwork_width_cm": 21.6,
+        "artwork_height_cm": 10.0,
+        "logo_height_cm": 6.0,
+        "logo_bottom_offset_cm": 10.5
+      },
+      "sleeve": {
+        "logo_height_cm": 11.0,
+        "logo_bottom_offset_cm": 9.0,
+        "wm_mark": true,
+        "client_logo_on_sleeve": true
+      },
+      "features": [
+        "Single Canopy",
+        "Manual Opening",
+        "66\" frame coverage",
+        "WM Essentials Handle",
+        "WM Runner",
+        "Generic Tips",
+        "Generic Ferrule",
+        "Generic Sleeve",
+        "No Mesh Pocket",
+        "No Silicon Rib"
+      ]
+    }
+  }
+}

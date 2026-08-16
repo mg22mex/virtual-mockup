@@ -1,0 +1,11 @@
+# Weatherman Mockup Creator Rules
+
+## Tech Stack & Architecture
+- **Language:** Python 3.10+
+- **Core Libraries:** Pillow (PIL), OpenCV, ReportLab, Streamlit.
+- **Design Specs:** Strict adherence to Weatherman production worksheet standards (e.g., Walk/Golf Essential panels, standard 21.6cm x 10cm artwork bounds).
+
+## Guardrails & Execution
+- Always maintain exact coordinate mappings, aspect ratios, and scaling factors when projecting client logos onto umbrella panels.
+- Keep UI code cleanly decoupled from the image-processing and PDF-export modules inside `utils/`.
+- Ensure generated multi-view proofs mirror official production sheets (Front View, Top View, Sleeve, and Flat Pattern layouts). @Proper Brands x WM Umbrella 2026 Mockup Designs.pdf 

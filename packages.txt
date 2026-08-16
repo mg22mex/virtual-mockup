@@ -1,0 +1,5 @@
+librsvg2-bin
+ghostscript
+imagemagick
+poppler-utils
+fonts-liberation

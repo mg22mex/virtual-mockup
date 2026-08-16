@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.streamlit/secrets.toml
+data/
+output/
+assets/logos/
+*.code-workspace
+.DS_Store
+.idea/
+.vscode/
+.agents/
+.claude/
+*.webm
+Proper Brands x WM Umbrella 2026 Mockup Designs.pdf
+# Generated product placeholders (official worksheet pages are kept)
+assets/templates/*_front.png
+assets/templates/*_top.png
+assets/templates/*_panel.png
+assets/templates/*_sleeve.png
