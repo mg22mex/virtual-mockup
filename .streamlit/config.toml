@@ -1,27 +1,33 @@
 [theme]
 base = "light"
-primaryColor = "#262D65"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F5F4EF"
+# Weatherman.com UI (not the navy production-worksheet ink)
+primaryColor = "#EF4E23"
+backgroundColor = "#F8F7F2"
+secondaryBackgroundColor = "#FFFFFF"
 textColor = "#111111"
-linkColor = "#262D65"
-borderColor = "#D8D8D4"
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@600;700&display=swap"
+linkColor = "#EF4E23"
+borderColor = "#E4E1DC"
+font = "Barlow:https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap"
+headingFont = "Lexend:https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&display=swap"
 baseFontSize = 15
 headingFontSizes = ["28px", "22px", "18px", "16px", "14px", "12px"]
 headingFontWeights = [700, 700, 600, 600, 600, 600]
-baseRadius = "none"
-buttonRadius = "none"
+baseRadius = "0.25rem"
+buttonRadius = "0.25rem"
 showWidgetBorder = true
 showSidebarBorder = true
 linkUnderline = false
-blueColor = "#262D65"
-grayColor = "#666666"
+# Accents from the storefront
+redColor = "#EF4E23"
+orangeColor = "#EF4E23"
+greenColor = "#1F4D3A"
+blueColor = "#1C2A4A"
+grayColor = "#6E6968"
+dataframeHeaderBackgroundColor = "#F1EFED"
 
 [theme.sidebar]
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F5F4EF"
+secondaryBackgroundColor = "#F1EFED"
 textColor = "#111111"
-borderColor = "#D8D8D4"
-primaryColor = "#262D65"
+borderColor = "#E4E1DC"
+primaryColor = "#EF4E23"

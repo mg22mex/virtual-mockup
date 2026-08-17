@@ -196,6 +196,18 @@ class WorksheetExporter:
             self._pages[page_no] = PILImage.open(path).convert("RGBA")
         return self._pages[page_no].copy()
 
+    def page_plan(self, job: JobSpec) -> list[tuple[int, str]]:
+        """Official worksheet pages that will be included for the selected styles."""
+        seen: set[int] = set()
+        plan: list[tuple[int, str]] = []
+        for key in job.product_keys:
+            for page_no in STYLE_PAGES.get(key, []):
+                if page_no in seen:
+                    continue
+                seen.add(page_no)
+                plan.append((page_no, PAGE_TITLES.get(page_no, f"Page {page_no}")))
+        return plan
+
     def iter_job_pages(
         self,
         job: JobSpec,

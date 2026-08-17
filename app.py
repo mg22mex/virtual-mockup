@@ -244,22 +244,23 @@ def main() -> None:
     else:
         st.warning("Upload a client logo to stamp it on the canopy, sleeve, top view, and panel sample.")
 
+    logo_fp = _logo_fingerprint(logo_bytes, logo_name)
+    job_fp = (
+        f"{STAMP_VERSION}|{job.client}|{job.panel_config}|{job.panel_count}|"
+        f"{','.join(job.product_keys)}|{job.fabric_name}|{job.logo_color_name}|"
+        f"{job.request_date}|{job.last_update}|{job.project_owner}|{job.print_order}|"
+        f"{job.year}|{job.knockout_mode}|{job.knockout_white}|{logo_fp}"
+    )
+    prev_fp = st.session_state.get("_job_fingerprint")
+    if prev_fp != job_fp:
+        # Drop any cached preview from a prior fabric/logo/upload so nothing overlays.
+        _preview_pages.clear()
+        st.session_state["_job_fingerprint"] = job_fp
+
     left, right = st.columns([2, 1], vertical_alignment="top")
     with left:
         st.badge(job.client_label, color="primary")
         st.subheader("Production worksheet")
-        logo_fp = _logo_fingerprint(logo_bytes, logo_name)
-        job_fp = (
-            f"{STAMP_VERSION}|{job.client}|{job.panel_config}|{job.panel_count}|"
-            f"{','.join(job.product_keys)}|{job.fabric_name}|{job.logo_color_name}|"
-            f"{job.request_date}|{job.last_update}|{job.project_owner}|{job.print_order}|"
-            f"{job.year}|{job.knockout_mode}|{job.knockout_white}|{logo_fp}"
-        )
-        prev_fp = st.session_state.get("_job_fingerprint")
-        if prev_fp != job_fp:
-            # Drop any cached preview from a prior fabric/logo/upload so nothing overlays.
-            _preview_pages.clear()
-            st.session_state["_job_fingerprint"] = job_fp
         pages = _preview_pages(
             STAMP_VERSION,
             job.client,
@@ -289,12 +290,17 @@ def main() -> None:
 
     with right:
         st.subheader("Export")
+        page_plan = exporter.page_plan(job)
+        page_labels = [title for _no, title in page_plan]
         st.write(
             f"**File:** `{worksheet_filename(job.client, job.year)}`  \n"
             f"**Fabric:** {fabric_caption(job.fabric_name)}  \n"
             f"**Logo:** {job.logo_color_name}  \n"
-            f"**Panels:** {panel_config}"
+            f"**Panels:** {panel_config}  \n"
+            f"**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
         )
+        if not logo:
+            st.caption("Generate still works without a logo; sheet marks stay as on the official template.")
         generate = st.button(
             "Generate production worksheet PDF",
             type="primary",
@@ -302,29 +308,46 @@ def main() -> None:
             width="stretch",
         )
         if generate:
-            with st.spinner("Composing official multi-page worksheet…"):
+            with st.spinner(f"Composing {len(page_plan)}-page worksheet…"):
                 pdf_bytes = exporter.build_pdf(job, logo)
             out_name = worksheet_filename(job.client, job.year)
             out_path = OUTPUT_DIR / out_name
             out_path.write_bytes(pdf_bytes)
+            st.session_state["pdf_bytes"] = pdf_bytes
+            st.session_state["pdf_name"] = out_name
+            st.session_state["pdf_pages"] = page_labels
+            st.session_state["pdf_fingerprint"] = job_fp
             logger.log(
                 "pdf_export",
                 {
                     "client": job.client,
                     "products": job.product_keys,
+                    "pages": page_labels,
                     "fabric": job.fabric_name,
                     "file": out_name,
                     "bytes": len(pdf_bytes),
                 },
             )
-            st.success(f"Wrote `{out_path.name}`")
+            st.success(f"Wrote `{out_name}` · {len(page_labels)} pages: {' · '.join(page_labels)}")
+
+        # Keep download outside the Generate click so Streamlit can finish serving the file.
+        pdf_bytes = st.session_state.get("pdf_bytes")
+        pdf_name = st.session_state.get("pdf_name")
+        pdf_pages = st.session_state.get("pdf_pages") or []
+        pdf_fp = st.session_state.get("pdf_fingerprint")
+        if pdf_bytes and pdf_name:
+            if pdf_fp and pdf_fp != job_fp:
+                st.warning("Job ticket changed since the last PDF. Generate again to include the current styles.")
+            else:
+                st.caption(f"Ready to download · {len(pdf_pages)} pages: {' · '.join(pdf_pages)}")
             st.download_button(
                 "Download PDF",
                 data=pdf_bytes,
-                file_name=out_name,
+                file_name=pdf_name,
                 mime="application/pdf",
                 icon=":material/download:",
                 width="stretch",
+                key="download_worksheet_pdf",
             )
 
     st.caption(
