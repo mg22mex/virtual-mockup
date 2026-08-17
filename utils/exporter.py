@@ -58,7 +58,8 @@ PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            {"box": (485, 860, 176, 42), "cover": (460, 840, 230, 84), "erase": "ink"},
+            # Front canopy: photo-inpaint so official white Proper is fully gone (ink left a ghost).
+            {"box": (485, 860, 176, 42), "cover": (455, 835, 240, 95), "erase": "photo"},
             # Closed-sleeve Weatherman wordmark under Front View → customer logo.
             {"box": (670, 1410, 170, 24), "cover": (640, 1394, 270, 56), "erase": "block"},
             {"box": (758, 2504, 610, 165), "cover": (742, 2488, 644, 200), "erase": "block"},

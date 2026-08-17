@@ -37,7 +37,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 23
+STAMP_VERSION = 24
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -53,6 +53,12 @@ def _init(version: int = STAMP_VERSION) -> tuple[StateMemory, AssetLogger, Works
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     LOGO_DIR.mkdir(parents=True, exist_ok=True)
     return StateMemory(ROOT), AssetLogger(ROOT), WorksheetExporter()
+
+
+def _clear_artwork_state() -> None:
+    for key in ("logo_bytes", "logo_name", "_saved_logo", "pdf_bytes", "pdf_name", "pdf_pages", "pdf_fingerprint"):
+        st.session_state.pop(key, None)
+    _preview_pages.clear()
 
 
 @st.cache_data(max_entries=12, show_spinner="Updating worksheet preview…")
@@ -167,10 +173,17 @@ def main() -> None:
         year = st.number_input("Worksheet year", min_value=2020, max_value=2040, value=date.today().year)
 
         ext_list = [e.lstrip(".") for e in SUPPORTED_EXTS]
+        if "logo_uploader_id" not in st.session_state:
+            st.session_state["logo_uploader_id"] = 0
         upload = st.file_uploader(
             "Client logo (SVG, AI, CDR, PDF, EPS)",
             type=ext_list,
+            key=f"client_logo_upload_{st.session_state['logo_uploader_id']}",
         )
+        if st.button("Clear uploaded logo", width="stretch"):
+            _clear_artwork_state()
+            st.session_state["logo_uploader_id"] = int(st.session_state["logo_uploader_id"]) + 1
+            st.rerun()
 
     if not product_keys:
         st.warning("Select at least one umbrella style.")
@@ -234,9 +247,9 @@ def main() -> None:
             saved.write_bytes(logo_bytes)
             logger.log("logo_upload", {"client": job.client, "file": saved.name, "bytes": len(logo_bytes)})
             st.session_state["_saved_logo"] = saved.name
-        st.caption(f"Artwork: `{logo_name}` · {job.logo_color_name}")
+        st.success(f"Using uploaded artwork: `{logo_name}` · {job.logo_color_name}")
     else:
-        st.info("Upload a client logo to stamp the canopy, sleeve, and panel sample. Until then the official Proper marks are cleared.")
+        st.info("No client logo uploaded. Official Proper marks are removed; upload SVG/AI/CDR/PDF/EPS to stamp.")
 
     logo_fp = _logo_fingerprint(logo_bytes, logo_name)
     job_fp = (
@@ -294,7 +307,7 @@ def main() -> None:
             f"**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
         )
         if not logo:
-            st.caption("Generate still works without a logo; sheet marks stay as on the official template.")
+            st.caption("No upload yet — Generate exports the worksheet with logo slots cleared.")
         generate = st.button(
             "Generate production worksheet PDF",
             type="primary",
