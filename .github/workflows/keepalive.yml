@@ -1,0 +1,40 @@
+# Keep the Streamlit Community Cloud app from sleeping.
+# Plain curl/HTTP is not enough — Cloud serves a static shell until a real
+# browser session opens (WebSocket). Playwright does that.
+#
+# This does NOT speed up cold env rebuilds after a reboot or dependency change;
+# it only reduces “Zzz / get this app back up” between normal visits.
+
+name: Keep Streamlit awake
+
+on:
+  schedule:
+    # Every 6 hours (UTC)
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: streamlit-keepalive
+  cancel-in-progress: true
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          pip install --quiet playwright
+          playwright install chromium --with-deps
+
+      - name: Wake app
+        env:
+          STREAMLIT_APP_URL: https://mg22mex-virtual-mockup-app-rg7ibp.streamlit.app/
+          KEEPALIVE_HOLD_SECONDS: "45"
+        run: python scripts/keepalive.py
