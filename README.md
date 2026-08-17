@@ -25,3 +25,9 @@ Accepted formats: **SVG, AI, CDR, PDF, EPS** (no PNG/JPG).
 3. In **Advanced settings**, set **Python version to 3.12** (avoid the platform default 3.14).
 4. `requirements.txt` installs Python deps (including PyMuPDF for logo vectors). No apt `packages.txt` — keeps cold boots fast.
 5. If logs show `spawn error` / `Event loop is closed`, use **Reboot app** from the Cloud dashboard after the latest push.
+
+### Keep-awake (GitHub Actions)
+
+`.github/workflows/keepalive.yml` opens the Cloud URL with Playwright every 6 hours so Community Cloud does not leave the app on the “get this app back up” sleep screen. Run it manually from the Actions tab anytime (**Keep Streamlit awake** → Run workflow).
+
+Note: keep-alive does not speed up a full environment rebuild after changing Python version or dependencies — that is a one-time Cloud install cost.
