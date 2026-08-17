@@ -9,8 +9,10 @@ name: Keep Streamlit awake
 
 on:
   schedule:
-    # Every 6 hours (UTC)
-    - cron: "15 */6 * * *"
+    # Every 2 hours (UTC). Community Cloud can sleep within ~half a day of
+    # idle; 6h left long gaps. 2h keeps a real browser session more often.
+    # Cost: ~12 Playwright runs/day (~1–3 min each) — fine on public repos.
+    - cron: "20 */2 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -35,6 +37,6 @@ jobs:
 
       - name: Wake app
         env:
-          STREAMLIT_APP_URL: https://virtual-mockup-fe3z8xxueqz7xjjb8wvcnt.streamlit.app/
-          KEEPALIVE_HOLD_SECONDS: "45"
+          STREAMLIT_APP_URL: https://virtual-mockup-fe3z8kxueqz7xjjb8vvcnt.streamlit.app/
+          KEEPALIVE_HOLD_SECONDS: "60"
         run: python scripts/keepalive.py
