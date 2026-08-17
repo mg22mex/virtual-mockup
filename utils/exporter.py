@@ -31,11 +31,12 @@ TEMPLATE_DPI = 144
 SCALE = TEMPLATE_DPI / 72.0  # template pixels per PDF point
 
 _FONT_CANDIDATES = (
+    ROOT / "assets" / "fonts",
     Path("/usr/share/fonts/truetype/liberation"),
     Path("/usr/share/fonts/liberation"),
     Path("/usr/share/fonts/truetype/liberation2"),
 )
-_FONT_DIR = next((p for p in _FONT_CANDIDATES if p.exists()), _FONT_CANDIDATES[0])
+_FONT_DIR = next((p for p in _FONT_CANDIDATES if (p / "LiberationSans-Regular.ttf").exists()), _FONT_CANDIDATES[0])
 
 # Official page numbers (1-based) used for each style.
 STYLE_PAGES: dict[str, list[int]] = {

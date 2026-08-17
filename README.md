@@ -11,7 +11,8 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-System tools used for vector logos: `rsvg-convert`, Ghostscript, ImageMagick, Poppler (`pdftocairo`).
+System tools used for vector logos (optional locally): `rsvg-convert`, Ghostscript, ImageMagick, Poppler (`pdftocairo`).
+Cloud uses PyMuPDF instead so apt installs are not required.
 
 ## Logo uploads
 
@@ -22,5 +23,5 @@ Accepted formats: **SVG, AI, CDR, PDF, EPS** (no PNG/JPG).
 1. Push this repo to GitHub.
 2. At [share.streamlit.io](https://share.streamlit.io), create an app pointing at `app.py`.
 3. In **Advanced settings**, set **Python version to 3.12** (avoid the platform default 3.14).
-4. `requirements.txt` and `packages.txt` install Python and apt dependencies automatically.
+4. `requirements.txt` installs Python deps (including PyMuPDF for logo vectors). No apt `packages.txt` — keeps cold boots fast.
 5. If logs show `spawn error` / `Event loop is closed`, use **Reboot app** from the Cloud dashboard after the latest push.

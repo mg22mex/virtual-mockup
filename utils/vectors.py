@@ -1,9 +1,8 @@
 """Rasterize client artwork from vector formats (SVG, AI, CDR, EPS, PDF).
 
-Uses system tools already on the workstation / Streamlit Cloud packages.txt:
-  SVG  → rsvg-convert (librsvg)
-  AI/EPS/PDF → Ghostscript / pdftocairo / ImageMagick
-  CDR  → ImageMagick, then ZIP-preview fallback for Corel X4+ packages
+Primary path is pure-Python PyMuPDF (no apt packages on Streamlit Cloud).
+Optional system tools (rsvg, Ghostscript, Poppler, ImageMagick) are used
+only when present — local workstations can keep them; Cloud boots without them.
 """
 
 from __future__ import annotations
@@ -37,30 +36,59 @@ def _run(cmd: list[str], timeout: int = 45) -> subprocess.CompletedProcess[bytes
     return subprocess.run(cmd, check=False, capture_output=True, timeout=timeout)
 
 
-def _open_png_bytes(data: bytes) -> Image.Image:
-    image = Image.open(BytesIO(data))
-    image.load()
+def _pixmap_to_image(pix) -> Image.Image:
+    mode = "RGBA" if pix.alpha else "RGB"
+    image = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
     return image.convert("RGBA")
 
 
+def _fitz_raster(raw: bytes, filetype: str, *, dpi: int = 300, width_px: int | None = None) -> Image.Image | None:
+    """Render with PyMuPDF when the bytes are a supported document type."""
+    try:
+        import fitz
+    except ImportError:
+        return None
+    try:
+        doc = fitz.open(stream=raw, filetype=filetype)
+    except Exception:
+        return None
+    try:
+        if doc.page_count < 1:
+            return None
+        page = doc[0]
+        if width_px and page.rect.width > 0:
+            zoom = width_px / float(page.rect.width)
+            matrix = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=matrix, alpha=True)
+        else:
+            pix = page.get_pixmap(dpi=dpi, alpha=True)
+        if pix.width < 2 or pix.height < 2:
+            return None
+        return _pixmap_to_image(pix)
+    except Exception:
+        return None
+    finally:
+        doc.close()
+
+
 def _rasterize_svg(raw: bytes, width_px: int) -> Image.Image:
+    image = _fitz_raster(raw, "svg", width_px=width_px)
+    if image is not None:
+        return image
+
     rsvg = _which("rsvg-convert")
-    if not rsvg:
-        raise VectorLoadError("SVG support requires rsvg-convert (librsvg).")
-    with tempfile.TemporaryDirectory() as tmp:
-        src = Path(tmp) / "art.svg"
-        dst = Path(tmp) / "art.png"
-        src.write_bytes(raw)
-        result = _run([rsvg, "-u", "-w", str(width_px), "-f", "png", "-o", str(dst), str(src)])
-        if result.returncode != 0 or not dst.exists():
-            magick = _which("magick", "convert")
-            if not magick:
-                err = (result.stderr or result.stdout or b"").decode("utf-8", "ignore")[:400]
-                raise VectorLoadError(f"Could not rasterize SVG. {err}")
-            result = _run([magick, "-background", "none", "-density", "300", str(src), str(dst)])
-            if result.returncode != 0 or not dst.exists():
-                raise VectorLoadError("Could not rasterize SVG with rsvg-convert or ImageMagick.")
-        return Image.open(dst).convert("RGBA")
+    if rsvg:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "art.svg"
+            dst = Path(tmp) / "art.png"
+            src.write_bytes(raw)
+            result = _run([rsvg, "-u", "-w", str(width_px), "-f", "png", "-o", str(dst), str(src)])
+            if result.returncode == 0 and dst.exists():
+                return Image.open(dst).convert("RGBA")
+
+    raise VectorLoadError(
+        "Could not rasterize SVG. Install PyMuPDF (pip) or rsvg-convert (librsvg)."
+    )
 
 
 def _ghostscript_png(src: Path, dst: Path, dpi: int) -> bool:
@@ -108,6 +136,16 @@ def _imagemagick_png(src: Path, dst: Path, dpi: int) -> bool:
 
 
 def _rasterize_pdf_family(raw: bytes, suffix: str, dpi: int) -> Image.Image:
+    # Many .ai files are PDF-compatible; try PDF first for both.
+    for filetype in ("pdf", "svg") if suffix == ".pdf" else ("pdf",):
+        image = _fitz_raster(raw, filetype, dpi=dpi)
+        if image is not None:
+            return image
+    if suffix == ".ai":
+        image = _fitz_raster(raw, "pdf", dpi=dpi)
+        if image is not None:
+            return image
+
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / f"art{suffix}"
         dst = Path(tmp) / "art.png"
@@ -119,9 +157,9 @@ def _rasterize_pdf_family(raw: bytes, suffix: str, dpi: int) -> Image.Image:
             return Image.open(cairo_out).convert("RGBA")
         if _imagemagick_png(src, dst, dpi):
             return Image.open(dst).convert("RGBA")
-        raise VectorLoadError(
-            f"Could not rasterize {suffix} artwork. Ghostscript/pdftocairo/ImageMagick failed."
-        )
+    raise VectorLoadError(
+        f"Could not rasterize {suffix} artwork. Need PyMuPDF, or Ghostscript/Poppler locally."
+    )
 
 
 def _cdr_preview_from_zip(raw: bytes) -> Image.Image | None:
@@ -160,8 +198,8 @@ def _rasterize_cdr(raw: bytes, dpi: int) -> Image.Image:
         if _imagemagick_png(src, dst, dpi):
             return Image.open(dst).convert("RGBA")
     raise VectorLoadError(
-        "Could not rasterize CorelDRAW (.cdr). Export the logo to SVG or PDF, "
-        "or install ImageMagick with CDR support."
+        "Could not rasterize CorelDRAW (.cdr). Export the logo to SVG or PDF "
+        "(ZIP-based CDR previews work without ImageMagick)."
     )
 
 

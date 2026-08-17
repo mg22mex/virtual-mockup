@@ -1,4 +1,0 @@
-librsvg2-bin
-ghostscript
-poppler-utils
-fonts-liberation
