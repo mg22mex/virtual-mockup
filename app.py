@@ -39,7 +39,7 @@ PANEL_OPTIONS = [
 
 STAMP_VERSION = 27
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
-FORM_KEY = "blank1"
+FORM_KEY = "blank2"
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
