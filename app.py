@@ -199,12 +199,18 @@ def main() -> None:
             st.caption("Uploaded artwork colors are kept as-is.")
         elif logo_color:
             st.caption("Uploaded art is recolored to the selected print color.")
-        year_raw = st.text_input(
+        year = st.number_input(
             "Worksheet year",
-            value="",
-            placeholder=str(date.today().year),
+            min_value=2020,
+            max_value=2040,
+            value=None,
+            step=1,
+            format="%d",
+            placeholder="Year",
             key=f"year_{FORM_KEY}",
-        ) or ""
+        )
+        if year is not None:
+            year = int(year)
 
         ext_list = [e.lstrip(".") for e in SUPPORTED_EXTS]
         if "logo_uploader_id" not in st.session_state:
@@ -230,13 +236,7 @@ def main() -> None:
         missing.append("fabric")
     if not logo_color:
         missing.append("logo color")
-    year = None
-    if year_raw.strip():
-        try:
-            year = int(year_raw.strip())
-        except ValueError:
-            missing.append("worksheet year (number)")
-    else:
+    if year is None:
         missing.append("worksheet year")
 
     if missing:
