@@ -37,7 +37,9 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 26
+STAMP_VERSION = 27
+# Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
+FORM_KEY = "blank1"
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -116,7 +118,6 @@ def main() -> None:
         st.logo(str(WM_MARK), size="large")
 
     memory, logger, exporter = _init(STAMP_VERSION)
-    remembered = memory.recall_ui()
 
     st.caption("Internal tool · Sales and operations · Production proofs")
     st.title("Virtual mockup creator")
@@ -124,57 +125,86 @@ def main() -> None:
 
     with st.sidebar:
         st.subheader("Job ticket")
-        client = st.text_input("Client", value=remembered.get("client", "Proper Brands"))
-        owner = st.text_input("Project owner", value=remembered.get("project_owner", "PB"))
-        print_order = st.text_input("Print order", value=remembered.get("print_order", "Peerless"))
-        today = date.today().strftime("%m/%d/%Y")
-        request_date = st.text_input("Request date", value=remembered.get("request_date") or today)
-        last_update = st.text_input("Last update", value=today)
+        client = st.text_input("Client", value="", placeholder="Client name", key=f"client_{FORM_KEY}") or ""
+        owner = st.text_input("Project owner", value="", placeholder="Initials", key=f"owner_{FORM_KEY}") or ""
+        print_order = st.text_input("Print order", value="", placeholder="Printer / PO", key=f"po_{FORM_KEY}") or ""
+        request_date = st.text_input(
+            "Request date",
+            value="",
+            placeholder="MM/DD/YYYY",
+            key=f"req_{FORM_KEY}",
+        ) or ""
+        last_update = st.text_input(
+            "Last update",
+            value="",
+            placeholder="MM/DD/YYYY",
+            key=f"upd_{FORM_KEY}",
+        ) or ""
 
         labels = style_labels()
-        default_products = remembered.get("products") or ["walk", "golf_essential"]
         selected_labels = st.multiselect(
             "Products",
             options=list(labels.values()),
-            default=[labels[k] for k in default_products if k in labels],
+            default=[],
+            placeholder="Choose styles",
+            key=f"products_{FORM_KEY}",
         )
         label_to_key = {v: k for k, v in labels.items()}
         product_keys = [label_to_key[label] for label in selected_labels]
 
-        remembered_panel = remembered.get("panel_config", "Standard 1 Panel")
         panel_config = st.selectbox(
             "Panel configuration",
             PANEL_OPTIONS,
-            index=PANEL_OPTIONS.index(remembered_panel) if remembered_panel in PANEL_OPTIONS else 0,
+            index=None,
+            placeholder="Choose panel configuration",
+            key=f"panel_{FORM_KEY}",
         )
         panel_count = {
             "Standard 1 Panel": 1,
             "Standard 2 Panel": 2,
             "Standard 4 Panel": 4,
             "All-over 8 Panel": 8,
-        }[panel_config]
+        }.get(panel_config or "", 0)
 
-        fabric_options = fabrics_for_styles(product_keys)
-        fabric_default = remembered.get("fabric", "Black (NRF 001)")
-        fabric = st.selectbox(
-            "Fabric / pattern color",
-            fabric_options,
-            index=fabric_options.index(fabric_default) if fabric_default in fabric_options else 0,
-            format_func=fabric_caption,
-        )
+        fabric_options = fabrics_for_styles(product_keys) if product_keys else []
+        if fabric_options:
+            fabric = st.selectbox(
+                "Fabric / pattern color",
+                fabric_options,
+                index=None,
+                placeholder="Choose fabric",
+                format_func=fabric_caption,
+                key=f"fabric_{FORM_KEY}",
+            )
+        else:
+            st.selectbox(
+                "Fabric / pattern color",
+                ["—"],
+                index=None,
+                placeholder="Select products first",
+                key=f"fabric_disabled_{FORM_KEY}",
+                disabled=True,
+            )
+            fabric = None
         logo_options = logo_color_names()
-        remembered_logo = remembered.get("logo_color", "Pantone White C")
         logo_color = st.selectbox(
             "Logo / graphic color",
             logo_options,
-            index=logo_options.index(remembered_logo) if remembered_logo in logo_options else 0,
+            index=None,
+            placeholder="Choose logo color",
+            key=f"logo_color_{FORM_KEY}",
         )
-        knockout_mode = logo_knockout_mode(logo_color)
-        if knockout_mode == "none":
+        knockout_mode = logo_knockout_mode(logo_color) if logo_color else "none"
+        if logo_color and knockout_mode == "none":
             st.caption("Uploaded artwork colors are kept as-is.")
-        else:
+        elif logo_color:
             st.caption("Uploaded art is recolored to the selected print color.")
-        year = st.number_input("Worksheet year", min_value=2020, max_value=2040, value=date.today().year)
+        year_raw = st.text_input(
+            "Worksheet year",
+            value="",
+            placeholder=str(date.today().year),
+            key=f"year_{FORM_KEY}",
+        ) or ""
 
         ext_list = [e.lstrip(".") for e in SUPPORTED_EXTS]
         if "logo_uploader_id" not in st.session_state:
@@ -182,27 +212,47 @@ def main() -> None:
         upload = st.file_uploader(
             "Client logo (SVG, AI, CDR, PDF, EPS)",
             type=ext_list,
-            key=f"client_logo_upload_{st.session_state['logo_uploader_id']}",
+            key=f"client_logo_upload_{FORM_KEY}_{st.session_state['logo_uploader_id']}",
         )
-        if st.button("Clear uploaded logo", width="stretch"):
+        if st.button("Clear uploaded logo", width="stretch", key=f"clear_logo_{FORM_KEY}"):
             _clear_artwork_state()
             st.session_state["logo_uploader_id"] = int(st.session_state["logo_uploader_id"]) + 1
             st.rerun()
 
+    missing = []
+    if not client.strip():
+        missing.append("client")
     if not product_keys:
-        st.warning("Select at least one umbrella style.")
+        missing.append("products")
+    if not panel_config:
+        missing.append("panel configuration")
+    if not fabric:
+        missing.append("fabric")
+    if not logo_color:
+        missing.append("logo color")
+    year = None
+    if year_raw.strip():
+        try:
+            year = int(year_raw.strip())
+        except ValueError:
+            missing.append("worksheet year (number)")
+    else:
+        missing.append("worksheet year")
+
+    if missing:
+        st.warning("Fill the job ticket to build a proof: " + ", ".join(missing) + ".")
         return
 
     resolved_knockout = knockout_mode
     job = JobSpec(
-        client=client.strip() or "Client",
+        client=client.strip(),
         panel_config=panel_config,
         panel_count=panel_count,
         product_keys=product_keys,
         fabric_name=fabric,
         logo_color_name=logo_color,
-        request_date=request_date,
-        last_update=last_update,
+        request_date=request_date.strip() or "—",
+        last_update=last_update.strip() or "—",
         project_owner=owner.strip() or "—",
         print_order=print_order.strip() or "—",
         year=int(year),

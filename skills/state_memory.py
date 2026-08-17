@@ -11,22 +11,12 @@ from typing import Any
 _DEFAULT_STATE: dict[str, Any] = {
     "last_job": {},
     "recent_jobs": [],
-    "ui": {
-        "client": "Proper Brands",
-        "panel_config": "Standard 1 Panel",
-        "panel_count": 1,
-        "products": ["walk", "golf_essential"],
-        "fabric": "Black (NRF 001)",
-        "logo_color": "Pantone White C",
-        "project_owner": "PB",
-        "print_order": "Peerless",
-        "knockout_white": True,
-    },
+    "ui": {},
 }
 
 
 class StateMemory:
-    """Remembers dashboard defaults and recently generated worksheets."""
+    """Remembers recent worksheets; does not prefill the job ticket."""
 
     def __init__(self, root: Path, max_jobs: int = 30) -> None:
         self.path = root / "data" / "state.json"
@@ -49,10 +39,10 @@ class StateMemory:
         self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def recall_ui(self) -> dict[str, Any]:
+        """Return stored UI values without injecting Proper/demo defaults."""
         state = self._read()
-        merged = dict(_DEFAULT_STATE["ui"])
-        merged.update(state.get("ui") or {})
-        return merged
+        ui = state.get("ui") or {}
+        return dict(ui) if isinstance(ui, dict) else {}
 
     def remember_ui(self, values: dict[str, Any]) -> None:
         state = self._read()
