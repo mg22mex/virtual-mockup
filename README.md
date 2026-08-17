@@ -28,6 +28,8 @@ Accepted formats: **SVG, AI, CDR, PDF, EPS** (no PNG/JPG).
 
 ### Keep-awake (GitHub Actions)
 
-`.github/workflows/keepalive.yml` opens the Cloud URL with Playwright every 6 hours so Community Cloud does not leave the app on the “get this app back up” sleep screen. Run it manually from the Actions tab anytime (**Keep Streamlit awake** → Run workflow).
+`.github/workflows/keepalive.yml` opens the Cloud URL with Playwright **every 2 hours** (and on demand) so Community Cloud is less likely to show “get this app back up.” Run it manually from the Actions tab anytime (**Keep Streamlit awake** → Run workflow).
 
-Note: keep-alive does not speed up a full environment rebuild after changing Python version or dependencies — that is a one-time Cloud install cost.
+To change cadence, edit the `cron` in that workflow (examples: every hour `20 * * * *`, every 3 hours `20 */3 * * *`).
+
+Note: keep-alive reduces sleep; it does not skip a full environment rebuild after changing dependencies or rebooting the app.
