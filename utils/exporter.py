@@ -64,11 +64,13 @@ PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front canopy: photo-inpaint so official white Proper is fully gone (ink left a ghost).
-            {"box": (485, 860, 176, 42), "cover": (455, 835, 240, 95), "erase": "photo"},
-            # Closed-sleeve Weatherman wordmark under Front View → customer logo.
-            {"box": (670, 1410, 170, 24), "cover": (640, 1394, 270, 56), "erase": "block"},
-            {"box": (758, 2504, 610, 165), "cover": (742, 2488, 644, 200), "erase": "block"},
+            # Front canopy: heal original Proper (glyphs + bevels) after recolor.
+            {"box": (485, 860, 176, 42), "cover": (475, 852, 200, 58), "erase": "photo"},
+            # Closed-sleeve wordmark — clone neighboring fabric after recolor (no rectangle).
+            # Cover spans the Weatherman icon + wordmark; stop short of the ferrule.
+            {"box": (670, 1410, 170, 24), "cover": (628, 1408, 204, 28), "erase": "sleeve"},
+            # Flat panel sample logo band.
+            {"box": (758, 2504, 610, 165), "cover": (742, 2488, 644, 200), "erase": "flat"},
         ],
         "chip": (1300, 50, 618, 168),
         "colors": {
@@ -83,7 +85,8 @@ PAGE_SPEC: dict[int, dict] = {
         "size_pts": (2125.98, 3543.84),
         "logos": [
             {"box": (920, 2344, 292, 80), "cover": (900, 2320, 332, 128), "erase": "ink"},
-            {"box": (1248, 3198, 210, 44), "cover": (1228, 3188, 248, 64), "erase": "ink"},
+            # Closed / horizontal sleeve wordmark — heal pale ink after recolor.
+            {"box": (1248, 3198, 210, 44), "cover": (1240, 3196, 220, 48), "erase": "sleeve"},
         ],
         "chip": (1300, 50, 618, 168),
     },
@@ -288,12 +291,18 @@ class WorksheetExporter:
         spec = PAGE_SPEC[page_no]
         fabric = job.fabric_rgb
         black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
-        # Always clear official Proper / Weatherman marks first so nothing is
-        # preloaded. Client art is stamped only after an upload provides `mark`.
+        # Photo/sleeve heals sample already-tinted fabric. Running them before
+        # recolor left a gray plate (skipped by the lum<95 shift) and leftover
+        # bevels that read as a ghost under the new mark.
+        post = {"photo", "sleeve"}
         for slot in spec["logos"]:
-            self._erase_slot(page, slot, black)
+            if str(slot.get("erase") or "") not in post:
+                self._erase_slot(page, slot, black)
         if fabric != black:
             page = self._recolor_fabric(page, fabric)
+        for slot in spec["logos"]:
+            if str(slot.get("erase") or "") in post:
+                self._erase_slot(page, slot, fabric)
         if mark is not None:
             for slot in spec["logos"]:
                 self._stamp_logo(page, slot, mark, fabric, erase=False)
@@ -314,6 +323,9 @@ class WorksheetExporter:
             return
         if erase == "photo":
             self._inpaint_cover(page, cover)
+        elif erase == "sleeve":
+            # Horizontal photo sleeve: heal pale glyphs only so fabric shading stays.
+            self._heal_pale_rows(page, cover)
         elif erase == "ink":
             self._erase_pale_on_fabric(page, cover, fabric, fill=False)
         elif erase == "flat":
@@ -367,7 +379,12 @@ class WorksheetExporter:
         page.paste(art, (px, py), art)
 
     def _inpaint_cover(self, page: PILImage.Image, cover: tuple[float, float, float, float]) -> None:
-        """Rebuild fabric through a slot so original marks leave no flat patch."""
+        """Erase original photo-slot art (pale ink plus beveled edges) after recolor.
+
+        Grows a mask from pale glyphs into nearby outliers so baked-in bevels go
+        with the letters. A full-rect mask or a median flood left a fabric patch.
+        Must run after fabric recolor so leftover ink is compared to the new color.
+        """
         import cv2
         import numpy as np
 
@@ -378,26 +395,98 @@ class WorksheetExporter:
             return
         crop = np.array(page.crop((x0, y0, x1, y1)))
         rgb = crop[:, :, :3]
-        lum = rgb.mean(axis=2)
-        mask = np.zeros((crop.shape[0], crop.shape[1]), np.uint8)
-        border = max(4, min(crop.shape[0], crop.shape[1]) // 14)
-        mask[border : crop.shape[0] - border, border : crop.shape[1] - border] = 255
-        # Keep worksheet paper; still erase pale ink sitting on fabric.
-        paper = cv2.blur(lum.astype(np.float32), (31, 31)) > 220
-        mask[paper & (lum > 230)] = 0
+        lum = rgb.mean(axis=2).astype(np.float32)
+        paper = (cv2.blur(lum, (51, 51)) > 232) & (lum > 240)
+        body = ~paper
+        if not body.any():
+            return
+        local = float(np.median(lum[body]))
+        pale = body & (lum > local + 18)
+        grow = body & ((lum > local + 10) | (lum < local - 14))
+        seed = pale.astype(np.uint8) * 255
+        if int(seed.max()) == 0:
+            seed = (body & (lum < local - 14)).astype(np.uint8) * 255
+        grow_u8 = grow.astype(np.uint8) * 255
+        kernel = np.ones((3, 3), np.uint8)
+        mask = seed
+        for _ in range(8):
+            nxt = cv2.bitwise_and(cv2.dilate(mask, kernel, iterations=1), grow_u8)
+            nxt = cv2.bitwise_or(nxt, mask)
+            if int(cv2.countNonZero(cv2.subtract(nxt, mask))) == 0:
+                break
+            mask = nxt
         if int(mask.max()) == 0:
             return
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        filled = cv2.inpaint(bgr, mask, 6, cv2.INPAINT_TELEA)
-        rgb2 = cv2.cvtColor(filled, cv2.COLOR_BGR2RGB)
-        lum2 = rgb2.mean(axis=2)
-        chroma2 = rgb2.max(axis=2) - rgb2.min(axis=2)
-        leftover = (lum2 > 168) & (chroma2 < 42) & (~paper)
-        if leftover.any():
-            fabric_px = rgb2[(lum2 < 140) & (~leftover)]
-            if len(fabric_px):
-                rgb2[leftover] = np.median(fabric_px, axis=0)
-        crop[:, :, :3] = rgb2
+        mask = cv2.dilate(mask, kernel, iterations=2)
+        mask[paper] = 0
+        near = cv2.dilate(mask, np.ones((9, 9), np.uint8), iterations=2) > 0
+        rgb2 = rgb.astype(np.float32)
+        for row in range(lum.shape[0]):
+            m = mask[row] > 0
+            n = near[row]
+            if not (np.any(m) or np.any(n)):
+                continue
+            keep = (mask[row] == 0) & body[row] & (~n)
+            if int(keep.sum()) < 4:
+                keep = (mask[row] == 0) & body[row]
+            if int(keep.sum()) >= 4:
+                fill = np.median(rgb2[row][keep], axis=0)
+            elif body[row].any():
+                fill = np.median(rgb2[row][body[row]], axis=0)
+            else:
+                fill = np.median(rgb2[body], axis=0)
+            if np.any(m):
+                rgb2[row, m] = fill
+            row_lum = rgb2[row].mean(axis=1)
+            extra = body[row] & n & (np.abs(row_lum - float(fill.mean())) > 7)
+            if extra.any():
+                rgb2[row, extra] = fill
+        crop[:, :, :3] = np.clip(rgb2, 0, 255).astype(np.uint8)
+        page.paste(PILImage.fromarray(crop), (x0, y0))
+
+    def _heal_pale_rows(self, page: PILImage.Image, cover: tuple[float, float, float, float]) -> None:
+        """Rebuild the closed-sleeve logo band from neighboring fabric shading.
+
+        The official photo has a darker plate plus a beveled white wordmark. Erasing
+        only pale pixels left that plate (a visible block on orange, navy, and lilac).
+        Each scanline is cloned from fabric immediately left of the slot. The whole
+        logo band is replaced (no edge-feather with the original) so the plate and
+        beveled Weatherman mark cannot remain as a ghost. Must run after recolor.
+        """
+        import cv2
+        import numpy as np
+
+        x, y, w, h = _pts(cover)
+        left_pad = int(40 * SCALE)
+        x0 = max(0, x - left_pad)
+        y0, y1 = max(0, y), min(page.height, y + h)
+        x1 = min(page.width, x + w)
+        if x1 - x0 < 12 or y1 - y0 < 8:
+            return
+        crop = np.array(page.crop((x0, y0, x1, y1)))
+        rgb = crop[:, :, :3].astype(np.float32)
+        lum = rgb.mean(axis=2)
+        paper = (cv2.blur(lum, (51, 51)) > 232) & (lum > 240)
+        height, width = lum.shape
+        tx0 = x - x0
+        if tx0 < 4 or tx0 >= width - 4:
+            return
+        out = rgb.copy()
+        for row in range(height):
+            if float(paper[row].mean()) > 0.65:
+                continue
+            left_band = ~paper[row, :tx0]
+            if int(left_band.sum()) < 4:
+                continue
+            left_lum = lum[row, :tx0][left_band]
+            left_med = float(np.median(left_lum))
+            left_ok = left_band & (np.abs(lum[row, :tx0] - left_med) < 36)
+            if int(left_ok.sum()) < 4:
+                left_ok = left_band
+            src_idx = np.flatnonzero(left_ok)
+            src_idx = src_idx[-min(24, src_idx.size) :]
+            out[row, tx0:] = rgb[row, src_idx[np.arange(width - tx0) % src_idx.size]]
+        crop[:, :, :3] = np.clip(out, 0, 255).astype(np.uint8)
         page.paste(PILImage.fromarray(crop), (x0, y0))
 
     def _erase_pale_on_fabric(
