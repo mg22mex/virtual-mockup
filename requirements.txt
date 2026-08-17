@@ -1,6 +1,6 @@
-streamlit>=1.48.0,<1.62
-pillow>=10.2.0,<12
-opencv-python-headless>=4.9.0,<5
-reportlab>=4.1.0,<5
-numpy>=1.26.0,<2.3
-pymupdf>=1.24.0,<1.27
+streamlit==1.48.0
+pillow==10.4.0
+opencv-python-headless==4.10.0.84
+reportlab==4.2.5
+numpy==1.26.4
+pymupdf==1.24.10
