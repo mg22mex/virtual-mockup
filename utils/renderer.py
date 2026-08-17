@@ -29,7 +29,12 @@ PANTONE_BLACK_C = (45, 41, 38)
 FABRIC_COLORS: dict[str, tuple[int, int, int]] = fabric_rgb_map()
 PRODUCT_CATALOG: dict[str, dict[str, Any]] = product_specs()
 
-_FONT_DIR = Path("/usr/share/fonts/liberation")
+_FONT_CANDIDATES = (
+    Path("/usr/share/fonts/truetype/liberation"),
+    Path("/usr/share/fonts/liberation"),
+    Path("/usr/share/fonts/truetype/liberation2"),
+)
+_FONT_DIR = next((p for p in _FONT_CANDIDATES if p.exists()), _FONT_CANDIDATES[0])
 
 
 def _font(kind: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:

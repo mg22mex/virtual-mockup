@@ -37,7 +37,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 24
+STAMP_VERSION = 25
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -58,10 +58,14 @@ def _init(version: int = STAMP_VERSION) -> tuple[StateMemory, AssetLogger, Works
 def _clear_artwork_state() -> None:
     for key in ("logo_bytes", "logo_name", "_saved_logo", "pdf_bytes", "pdf_name", "pdf_pages", "pdf_fingerprint"):
         st.session_state.pop(key, None)
-    _preview_pages.clear()
+    try:
+        _preview_pages.clear()
+    except Exception:
+        pass
 
 
-@st.cache_data(max_entries=12, show_spinner="Updating worksheet preview…")
+# No show_spinner: Cloud reboots kill the spinner thread and surface "Event loop is closed".
+@st.cache_data(max_entries=12)
 def _preview_pages(
     stamp_version: int,
     client: str,
@@ -268,25 +272,26 @@ def main() -> None:
     with left:
         st.badge(job.client_label, color="primary")
         st.subheader("Production worksheet")
-        pages = _preview_pages(
-            STAMP_VERSION,
-            job.client,
-            job.panel_config,
-            job.panel_count,
-            tuple(job.product_keys),
-            job.fabric_name,
-            job.logo_color_name,
-            job.request_date,
-            job.last_update,
-            job.project_owner,
-            job.print_order,
-            job.year,
-            job.knockout_mode,
-            job.knockout_white,
-            logo_fp,
-            logo_bytes,
-            logo_name,
-        )
+        with st.spinner("Updating worksheet preview…"):
+            pages = _preview_pages(
+                STAMP_VERSION,
+                job.client,
+                job.panel_config,
+                job.panel_count,
+                tuple(job.product_keys),
+                job.fabric_name,
+                job.logo_color_name,
+                job.request_date,
+                job.last_update,
+                job.project_owner,
+                job.print_order,
+                job.year,
+                job.knockout_mode,
+                job.knockout_white,
+                logo_fp,
+                logo_bytes,
+                logo_name,
+            )
         if not pages:
             st.warning("No official worksheet pages for the selected styles.")
         else:
@@ -364,4 +369,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        # Surface a clear message instead of a blank Cloud "Error running app" page.
+        st.set_page_config(page_title="Virtual Mockup · error", layout="wide")
+        st.error("The mockup app failed to start.")
+        st.exception(exc)
