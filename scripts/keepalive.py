@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 
 APP_URL = os.environ.get(
     "STREAMLIT_APP_URL",
-    "https://virtual-mockup-fe3z8xxueqz7xjjb8wvcnt.streamlit.app/",
+    "https://virtual-mockup-fe3z8kxueqz7xjjb8vvcnt.streamlit.app/",
 ).rstrip("/") + "/"
 HOLD_SECONDS = int(os.environ.get("KEEPALIVE_HOLD_SECONDS", "45"))
 
