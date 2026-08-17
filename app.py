@@ -37,7 +37,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 22
+STAMP_VERSION = 23
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -216,16 +216,11 @@ def main() -> None:
         logo_name = upload.name
         st.session_state["logo_bytes"] = logo_bytes
         st.session_state["logo_name"] = logo_name
-    elif st.session_state.get("logo_bytes"):
-        logo_bytes = st.session_state["logo_bytes"]
-        logo_name = st.session_state.get("logo_name") or "logo.svg"
     else:
-        saved_svgs = sorted(LOGO_DIR.glob("*.svg"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if saved_svgs:
-            logo_bytes = saved_svgs[0].read_bytes()
-            logo_name = saved_svgs[0].name
-            st.session_state["logo_bytes"] = logo_bytes
-            st.session_state["logo_name"] = logo_name
+        # Do not preload a saved Proper (or any) logo — wait for an explicit upload.
+        st.session_state.pop("logo_bytes", None)
+        st.session_state.pop("logo_name", None)
+        st.session_state.pop("_saved_logo", None)
 
     if logo_bytes and logo_name:
         try:
@@ -233,16 +228,15 @@ def main() -> None:
         except VectorLoadError as exc:
             st.error(str(exc))
             return
-        if upload is not None:
-            stamp = date.today().isoformat()
-            saved = LOGO_DIR / f"{job.client.replace(' ', '_')}_{stamp}_{Path(upload.name).name}"
-            if st.session_state.get("_saved_logo") != saved.name:
-                saved.write_bytes(logo_bytes)
-                logger.log("logo_upload", {"client": job.client, "file": saved.name, "bytes": len(logo_bytes)})
-                st.session_state["_saved_logo"] = saved.name
+        stamp = date.today().isoformat()
+        saved = LOGO_DIR / f"{job.client.replace(' ', '_')}_{stamp}_{Path(logo_name).name}"
+        if st.session_state.get("_saved_logo") != saved.name:
+            saved.write_bytes(logo_bytes)
+            logger.log("logo_upload", {"client": job.client, "file": saved.name, "bytes": len(logo_bytes)})
+            st.session_state["_saved_logo"] = saved.name
         st.caption(f"Artwork: `{logo_name}` · {job.logo_color_name}")
     else:
-        st.warning("Upload a client logo to stamp it on the canopy, sleeve, top view, and panel sample.")
+        st.info("Upload a client logo to stamp the canopy, sleeve, and panel sample. Until then the official Proper marks are cleared.")
 
     logo_fp = _logo_fingerprint(logo_bytes, logo_name)
     job_fp = (

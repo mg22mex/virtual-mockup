@@ -60,7 +60,7 @@ PAGE_SPEC: dict[int, dict] = {
         "logos": [
             {"box": (485, 860, 176, 42), "cover": (460, 840, 230, 84), "erase": "ink"},
             # Closed-sleeve Weatherman wordmark under Front View → customer logo.
-            {"box": (670, 1410, 170, 24), "cover": (650, 1398, 250, 48), "erase": "flat"},
+            {"box": (670, 1410, 170, 24), "cover": (640, 1394, 270, 56), "erase": "block"},
             {"box": (758, 2504, 610, 165), "cover": (742, 2488, 644, 200), "erase": "block"},
         ],
         "chip": (1300, 50, 618, 168),
@@ -281,11 +281,10 @@ class WorksheetExporter:
         spec = PAGE_SPEC[page_no]
         fabric = job.fabric_rgb
         black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
-        # Erase official marks on the dark template first so light fabrics never
-        # leave white/ghost leftovers from the previous job or the source sheet.
-        if mark is not None:
-            for slot in spec["logos"]:
-                self._erase_slot(page, slot, black)
+        # Always clear official Proper / Weatherman marks first so nothing is
+        # preloaded. Client art is stamped only after an upload provides `mark`.
+        for slot in spec["logos"]:
+            self._erase_slot(page, slot, black)
         if fabric != black:
             page = self._recolor_fabric(page, fabric)
         if mark is not None:
