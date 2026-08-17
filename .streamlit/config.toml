@@ -1,30 +1,13 @@
 [theme]
 base = "light"
-# Weatherman.com UI (not the navy production-worksheet ink)
 primaryColor = "#EF4E23"
 backgroundColor = "#F8F7F2"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#111111"
-linkColor = "#EF4E23"
-borderColor = "#E4E1DC"
-font = "sans-serif"
-headingFont = "sans-serif"
-baseFontSize = 15
-baseRadius = "0.25rem"
-buttonRadius = "0.25rem"
-showWidgetBorder = true
-showSidebarBorder = true
-linkUnderline = false
-redColor = "#EF4E23"
-orangeColor = "#EF4E23"
-greenColor = "#1F4D3A"
-blueColor = "#1C2A4A"
-grayColor = "#6E6968"
-dataframeHeaderBackgroundColor = "#F1EFED"
+font = "sans serif"
 
 [theme.sidebar]
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F1EFED"
-textColor = "#111111"
-borderColor = "#E4E1DC"
 primaryColor = "#EF4E23"
+textColor = "#111111"

@@ -37,7 +37,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 25
+STAMP_VERSION = 26
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -368,11 +368,4 @@ def main() -> None:
     )
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        # Surface a clear message instead of a blank Cloud "Error running app" page.
-        st.set_page_config(page_title="Virtual Mockup · error", layout="wide")
-        st.error("The mockup app failed to start.")
-        st.exception(exc)
+main()
