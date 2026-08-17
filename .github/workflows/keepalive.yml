@@ -35,6 +35,6 @@ jobs:
 
       - name: Wake app
         env:
-          STREAMLIT_APP_URL: https://mg22mex-virtual-mockup-app-rg7ibp.streamlit.app/
+          STREAMLIT_APP_URL: https://virtual-mockup-fe3z8xxueqz7xjjb8wvcnt.streamlit.app/
           KEEPALIVE_HOLD_SECONDS: "45"
         run: python scripts/keepalive.py

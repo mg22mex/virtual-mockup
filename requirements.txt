@@ -1,6 +1,9 @@
-streamlit==1.48.0
-pillow==10.4.0
-opencv-python-headless==4.10.0.84
-reportlab==4.2.5
-numpy==1.26.4
-pymupdf==1.24.10
+# Prefer wheels only — compiling Pillow from sdist fails on Streamlit Cloud
+# (no libjpeg/zlib headers). Do not remove --only-binary.
+--only-binary=:all:
+streamlit>=1.48.0,<1.62
+pillow>=10.2.0,<13
+opencv-python-headless>=4.9.0,<5
+reportlab>=4.1.0,<5
+numpy>=1.26.0,<2.3
+pymupdf>=1.24.0,<1.27
