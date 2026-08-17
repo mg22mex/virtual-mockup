@@ -22,6 +22,7 @@ from utils.catalog import (
     style_labels,
 )
 from utils.exporter import WorksheetExporter, worksheet_filename
+from utils.project_guide import render_project_guide
 from utils.renderer import JobSpec
 from utils.vectors import SUPPORTED_EXTS, VectorLoadError, load_artwork
 
@@ -241,6 +242,7 @@ def main() -> None:
 
     if missing:
         st.warning("Fill the job ticket to build a proof: " + ", ".join(missing) + ".")
+        render_project_guide(stamp_version=STAMP_VERSION)
         return
 
     resolved_knockout = knockout_mode
@@ -416,6 +418,7 @@ def main() -> None:
         "Catalog: Walk · Stick · Golf Essential / 62 / 68 · Trek · Travel · Collapsible · Kids. "
         "Artwork bound 21.6 × 10 cm (Walk/Golf). Logos: SVG, AI, CDR, PDF, EPS."
     )
+    render_project_guide(stamp_version=STAMP_VERSION)
 
 
 main()

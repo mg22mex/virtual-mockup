@@ -130,8 +130,79 @@ dependency changes or a dashboard reboot.
 
 ---
 
-## Development rules (short)
+## Architecture diagrams
 
-See `.cursorrules` for production constraints: keep exact panel mappings and
-scale factors, keep UI decoupled from `utils/`, and keep generated proofs
-aligned with official Front / Top / Sleeve / Flat layouts.
+### Operator pipeline
+
+```mermaid
+flowchart LR
+  A[Job ticket] --> B[Vector logo upload]
+  B --> C[Rasterize artwork]
+  C --> D[Erase official marks]
+  D --> E[Recolor fabric]
+  E --> F[Stamp client logo]
+  F --> G[On-screen proof]
+  G --> H[PDF export]
+```
+
+### Module layout
+
+```mermaid
+flowchart TB
+  subgraph UI["app.py · Streamlit"]
+    T[Job ticket]
+    P[Worksheet preview]
+    X[PDF download]
+  end
+  subgraph Utils["utils/"]
+    V[vectors.py · PyMuPDF]
+    E[exporter.py · stamp + PDF]
+    R[renderer.py · logo prep]
+    C[catalog.json]
+  end
+  T --> E
+  T --> V
+  V --> R
+  R --> E
+  C --> E
+  E --> P
+  E --> X
+```
+
+### Official page mapping
+
+```mermaid
+flowchart TB
+  subgraph Stick["Walk / Stick family"]
+    S1[Official page 1 · Walk sheet]
+  end
+  subgraph Golf["Golf Essential / 62 / 68"]
+    G2[Page 2 · Golf Essential]
+    G3[Page 3 · Graphic sizing]
+    G4[Page 4 · Sleeve]
+  end
+  Job[Selected products] --> Stick
+  Job --> Golf
+```
+
+### Build timeline (16 Aug 2026)
+
+```mermaid
+timeline
+  title Virtual Mockup · 16 Aug 2026
+  section Foundation
+    Morning : Initial Streamlit app
+            : Official worksheet stamp pipeline
+  section Product polish
+    Afternoon : Multi-style PDF export
+              : Weatherman.com UI theme
+              : Blank ticket · no Proper preload
+  section Cloud
+    Evening : Wheel-only deps for Python 3.14
+            : PyMuPDF · no apt ImageMagick
+            : GitHub Actions keep-alive
+            : Docs and gitignore hygiene
+```
+
+The same diagrams and live metrics appear in the Streamlit UI under
+**About this tool · diagrams, stats, timeline**.
