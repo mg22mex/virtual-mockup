@@ -206,3 +206,11 @@ timeline
 
 The same diagrams and live metrics appear in the Streamlit UI under
 **About this tool · diagrams, stats, timeline**.
+
+---
+
+## Development rules (short)
+
+See `.cursorrules` for production constraints: keep exact panel mappings and
+scale factors, keep UI decoupled from `utils/`, and keep generated proofs
+aligned with official Front / Top / Sleeve / Flat layouts.
