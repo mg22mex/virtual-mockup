@@ -21,4 +21,6 @@ Accepted formats: **SVG, AI, CDR, PDF, EPS** (no PNG/JPG).
 
 1. Push this repo to GitHub.
 2. At [share.streamlit.io](https://share.streamlit.io), create an app pointing at `app.py`.
-3. `requirements.txt` and `packages.txt` install Python and apt dependencies automatically.
+3. In **Advanced settings**, set **Python version to 3.12** (avoid the platform default 3.14).
+4. `requirements.txt` and `packages.txt` install Python and apt dependencies automatically.
+5. If logs show `spawn error` / `Event loop is closed`, use **Reboot app** from the Cloud dashboard after the latest push.
