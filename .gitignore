@@ -1,19 +1,45 @@
+# Local environments & tooling
 .venv/
+venv/
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / IDE
+.idea/
+.vscode/
+*.code-workspace
+.agents/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Streamlit secrets (never commit)
 .streamlit/secrets.toml
+
+# Runtime / generated data
 data/
 output/
 assets/logos/
-*.code-workspace
-.DS_Store
-.idea/
-.vscode/
-.agents/
-.claude/
+*.log
+logs-*.txt
+asset_log.jsonl
+
+# Screen recordings & local media (do not upload)
 *.webm
+*.mp4
+*.mov
+Videocaptura*
+Videocapture*
+Screen Recording*
+Screenshot*
+
+# Large / proprietary reference sheets kept locally only
 Proper Brands x WM Umbrella 2026 Mockup Designs.pdf
+
 # Generated product placeholders (official worksheet pages are kept)
 assets/templates/*_front.png
 assets/templates/*_top.png
