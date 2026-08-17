@@ -1,9 +1,10 @@
-# Prefer wheels only — compiling Pillow from sdist fails on Streamlit Cloud
-# (no libjpeg/zlib headers). Do not remove --only-binary.
+# Wheels only — Cloud has no headers to compile Pillow/numpy from source.
+# Community Cloud is currently provisioning Python 3.14; keep ranges that
+# publish cp314 wheels (numpy needs >=2.3 on 3.14).
 --only-binary=:all:
 streamlit>=1.48.0,<1.62
-pillow>=10.2.0,<13
+pillow>=10.2.0
 opencv-python-headless>=4.9.0,<5
 reportlab>=4.1.0,<5
-numpy>=1.26.0,<2.3
+numpy>=2.3.0,<2.6
 pymupdf>=1.24.0,<1.27
