@@ -105,6 +105,7 @@ class JobSpec:
     panel_config: str = "Standard 1 Panel"
     panel_count: int = 1
     product_keys: list[str] = field(default_factory=lambda: ["walk"])
+    family: str = "umbrella"
     fabric_name: str = "Black (NRF 001)"
     logo_color_name: str = "Pantone White C"
     request_date: str = ""
@@ -127,6 +128,8 @@ class JobSpec:
 
     @property
     def client_label(self) -> str:
+        if self.family == "backpack":
+            return f"{self.client} ({self.panel_config or 'Upper center'})"
         return f"{self.client} ({self.panel_config})"
 
     def logo_panels(self, n_canopy: int = 8) -> list[int]:
@@ -188,6 +191,8 @@ class MockupRenderer:
         else:
             ink = bright if bright.any() else opaque
 
+        ink = self._drop_border_background(ink)
+
         out = np.zeros_like(arr)
         out[:, :, 0] = int(fill[0])
         out[:, :, 1] = int(fill[1])
@@ -196,6 +201,33 @@ class MockupRenderer:
         prepared = Image.fromarray(out)
         bbox = prepared.getchannel("A").getbbox()
         return prepared.crop(bbox) if bbox else prepared
+
+    @staticmethod
+    def _drop_border_background(ink: np.ndarray) -> np.ndarray:
+        """Drop opaque regions that touch the canvas edge (uploaded background plates)."""
+        mask = ink.astype(np.uint8) * 255
+        if mask.max() == 0:
+            return ink
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        if n <= 1:
+            return ink
+        height, width = mask.shape
+        keep = np.zeros(n, dtype=bool)
+        for idx in range(1, n):
+            x = int(stats[idx, cv2.CC_STAT_LEFT])
+            y = int(stats[idx, cv2.CC_STAT_TOP])
+            w = int(stats[idx, cv2.CC_STAT_WIDTH])
+            h = int(stats[idx, cv2.CC_STAT_HEIGHT])
+            if x > 0 and y > 0 and x + w < width and y + h < height:
+                keep[idx] = True
+        if not keep[1:].any():
+            largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+            keep[largest] = True
+        trimmed = np.zeros_like(ink, dtype=bool)
+        for idx in range(1, n):
+            if keep[idx]:
+                trimmed |= labels == idx
+        return trimmed
 
     def _fit_logo(self, logo: Image.Image, max_w: int, max_h: int) -> Image.Image:
         img = logo.convert("RGBA")

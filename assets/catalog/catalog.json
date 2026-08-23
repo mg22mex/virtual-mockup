@@ -4,7 +4,9 @@
     "Google Drive: Master Data Sheet v. 12/11/23 — Product Info, Pantone#, All Dims, AP Umbrellas",
     "Google Drive: Oct–Dec 2026 Color Availability Analysis",
     "Local: Projects/Color analysis (NRF SKUs, core/fashion tags)",
-    "Production worksheet: Proper Brands x WM Umbrella 2026 Mockup Designs.pdf"
+    "Production worksheet: Proper Brands x WM Umbrella 2026 Mockup Designs.pdf",
+    "Production worksheet: M13-Backpack-custom-mockup-options.pdf (Venture Dry Pack 40002)",
+    "Shopify Admin: Venture Dry Pack (Accessories), Trail Hound Rain Vest (Apparel / poncho tag)"
   ],
   "artwork_bounds_cm": {"width": 21.6, "height": 10.0},
   "logo_colors": [
@@ -23,7 +25,7 @@
     "Sunlit Butter": {"rgb": [243, 224, 168], "nrf": null, "pantone": "11-0710 TCX", "family": "Yellow", "category": "Fashion", "kind": "solid"},
     "Rusty Orange": {"rgb": [166, 67, 30], "nrf": null, "pantone": "1675 C", "family": "Orange", "category": "Fashion", "kind": "solid"},
     "Blush (NRF 680)": {"rgb": [206, 140, 146], "nrf": "680", "pantone": "7430 C", "family": "Blush", "category": "Fashion", "kind": "solid"},
-    "Steel Blue": {"rgb": [91, 124, 153], "nrf": null, "pantone": "2374 C / 18-3921 TCX", "family": "Steel Blue", "category": "Fashion", "kind": "solid"},
+    "Steel Blue": {"rgb": [91, 124, 153], "nrf": "421", "pantone": "2374 C / 18-3921 TCX", "family": "Steel Blue", "category": "Fashion", "kind": "solid"},
     "Dusty Lavender": {"rgb": [139, 125, 155], "nrf": null, "pantone": "17-3924 TCX", "family": "Purple", "category": "Fashion", "kind": "solid"},
     "Lavender Crystal": {"rgb": [155, 107, 158], "nrf": null, "pantone": "18-3530 TCX", "family": "Purple", "category": "Fashion", "kind": "solid"},
     "Heron": {"rgb": [110, 106, 138], "nrf": null, "pantone": "18-3817 TCX", "family": "Purple", "category": "Fashion", "kind": "solid"},
@@ -200,6 +202,23 @@
       "features": ["Youth canopy", "32\" frame coverage"],
       "core_colors": ["Red (NRF 200)", "Neon Yellow", "Cosmic Rainbow"],
       "all_colors": ["Red (NRF 200)", "Neon Yellow", "Cosmic Rainbow", "Color Storm", "Sage", "Rusty Orange", "Whispy Blue", "Kaleidoscope", "FOH Blue 2025", "Steel Blue", "Lilac", "Neon Pink", "Blush (NRF 680)"]
+    },
+    "venture_dry_pack": {
+      "display_name": "Venture Dry Pack",
+      "subtitle": "Backpack",
+      "style_number": "40002",
+      "shopify_type": "Accessories",
+      "family": "backpack",
+      "worksheet_layout": "backpack",
+      "canopy_panels": 1,
+      "opening": "—",
+      "page_size_pts": [2125.98, 3259.84],
+      "artwork_width_cm": 9.2,
+      "artwork_height_cm": 4.5,
+      "placement": "Upper center",
+      "features": ["Upper-center front panel artwork", "9.2 × 4.5 cm"],
+      "core_colors": ["Black (NRF 001)", "Sage", "Steel Blue"],
+      "all_colors": ["Black (NRF 001)", "Sage", "Steel Blue"]
     }
   }
 }

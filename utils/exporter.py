@@ -16,12 +16,13 @@ from PIL import ImageDraw, ImageFont
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from .catalog import fabric_sheet_lines, logo_color_rgb
+from .catalog import fabric_sheet_lines, logo_color_rgb, style_family
 from .renderer import (
     FABRIC_COLORS,
     NAVY,
     JobSpec,
     MockupRenderer,
+    composite,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +50,7 @@ STYLE_PAGES: dict[str, list[int]] = {
     "golf_essential": [2, 3, 4],
     "golf_62": [2, 3, 4],
     "golf_68": [2, 3, 4],
+    "venture_dry_pack": [1],
 }
 
 PAGE_TITLES: dict[int, str] = {
@@ -56,6 +58,57 @@ PAGE_TITLES: dict[int, str] = {
     2: "Golf Essential",
     3: "Graphic sizing",
     4: "Sleeve",
+}
+
+BACKPACK_TITLES: dict[int, str] = {
+    1: "Venture Dry Pack",
+}
+
+# Venture Dry Pack (style 40002) — M13 backpack worksheet, same page size as Walk.
+def _cm_box(center_x: float, center_y: float, width_cm: float, height_cm: float) -> tuple[float, float, float, float]:
+    """PDF-point box centered on a worksheet anchor (72 pt/in)."""
+    w = width_cm / 2.54 * 72.0
+    h = height_cm / 2.54 * 72.0
+    return (center_x - w / 2.0, center_y - h / 2.0, w, h)
+
+
+# Venture Dry Pack artwork bounds: 9.2 × 4.5 cm on the line drawing (M13 anchor).
+_BACKPACK_ART_W_CM = 9.2
+_BACKPACK_ART_H_CM = 4.5
+_BACKPACK_DRAW_CENTER = (1041.5, 2275.0)
+_BACKPACK_DRAW_BOX = _cm_box(*_BACKPACK_DRAW_CENTER, _BACKPACK_ART_W_CM, _BACKPACK_ART_H_CM)
+_dx, _dy, _dw, _dh = _BACKPACK_DRAW_BOX
+_BACKPACK_DRAW_COVER = (_dx - 15.0, _dy - 15.0, _dw + 30.0, _dh + 30.0)
+
+BACKPACK_PAGE_SPEC: dict[int, dict] = {
+    1: {
+        "size_pts": (2125.98, 3259.84),
+        "logos": [
+            # Front-view photo — perspective quad traced from the official M13 mark.
+            {
+                "box": (611, 872, 149, 90),
+                "cover": (590, 855, 198, 125),
+                "erase": "photo",
+                "quad": [(627.5, 871.5), (760.5, 907.0), (753.0, 960.5), (611.5, 931.5)],
+            },
+            # Artwork callout — remove sample ink only; keep the charcoal plate.
+            {"box": (1268, 890, 455, 221), "cover": (1248, 870, 495, 280), "erase": "ink"},
+            # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
+            {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "ink"},
+        ],
+        "chip": (1290, 48, 400, 170),
+        "recolor_regions": [
+            (300, 580, 640, 900),
+            (560, 1880, 760, 1120),
+        ],
+        "colors": {
+            "logo_swatch": (56, 2040, 90, 52),
+            "logo_label": (160, 2038, 280, 56),
+            "fabric_swatch": (56, 1890, 90, 52),
+            "fabric_label": (160, 1888, 320, 56),
+            "font_pt": 16,
+        },
+    },
 }
 
 # Coordinates are PDF points at 72 dpi (page-1 = 2126×3260, golf = 2126×3544).
@@ -122,10 +175,11 @@ PAGE_SPEC: dict[int, dict] = {
 }
 
 
-def worksheet_filename(client: str, year: int | None = None) -> str:
+def worksheet_filename(client: str, year: int | None = None, family: str = "umbrella") -> str:
     year = year or date.today().year
     safe = " ".join(client.strip().split()) or "Client"
-    return f"{safe} x WM Umbrella {year} Mockup Designs.pdf"
+    kind = "Backpack" if family == "backpack" else "Umbrella"
+    return f"{safe} x WM {kind} {year} Mockup Designs.pdf"
 
 
 def _font(bold: bool, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -150,10 +204,15 @@ def _recolor_ink(mark: PILImage.Image, rgb: tuple[int, int, int]) -> PILImage.Im
     import numpy as np
 
     arr = np.array(mark.convert("RGBA"))
-    arr[:, :, 0] = int(rgb[0])
-    arr[:, :, 1] = int(rgb[1])
-    arr[:, :, 2] = int(rgb[2])
+    ink = arr[:, :, 3] > 0
+    arr[ink, 0] = int(rgb[0])
+    arr[ink, 1] = int(rgb[1])
+    arr[ink, 2] = int(rgb[2])
     return PILImage.fromarray(arr)
+
+
+def _pt_xy(x: float, y: float) -> tuple[int, int]:
+    return int(round(x * SCALE)), int(round(y * SCALE))
 
 
 def _outline_mark(
@@ -192,22 +251,46 @@ class WorksheetExporter:
 
     def __init__(self, renderer: MockupRenderer | None = None) -> None:
         self.renderer = renderer or MockupRenderer(px_per_cm=24.0)
-        self._pages: dict[int, PILImage.Image] = {}
+        self._pages: dict[tuple[str, int], PILImage.Image] = {}
 
-    def _template(self, page_no: int) -> PILImage.Image:
-        if page_no not in self._pages:
-            path = OFFICIAL_PAGES / f"page-{page_no}.png"
+    def _job_family(self, job: JobSpec) -> str:
+        if getattr(job, "family", None):
+            return str(job.family)
+        for key in job.product_keys:
+            fam = style_family(key)
+            if fam != "umbrella":
+                return fam
+        return "umbrella"
+
+    def _page_spec(self, family: str, page_no: int) -> dict:
+        if family == "backpack":
+            return BACKPACK_PAGE_SPEC[page_no]
+        return PAGE_SPEC[page_no]
+
+    def _page_title(self, family: str, page_no: int) -> str:
+        if family == "backpack":
+            return BACKPACK_TITLES.get(page_no, f"Page {page_no}")
+        return PAGE_TITLES.get(page_no, f"Page {page_no}")
+
+    def _template(self, page_no: int, family: str = "umbrella") -> PILImage.Image:
+        key = (family, page_no)
+        if key not in self._pages:
+            if family == "backpack":
+                path = OFFICIAL_PAGES / "backpack" / f"page-{page_no}.png"
+            else:
+                path = OFFICIAL_PAGES / f"page-{page_no}.png"
             if not path.exists():
                 raise FileNotFoundError(
                     f"Official worksheet page missing: {path}. "
                     "Place the Illustrator PDF at assets/templates/official_worksheet.pdf "
                     f"and rasterize with: pdftoppm -png -r {TEMPLATE_DPI} ..."
                 )
-            self._pages[page_no] = PILImage.open(path).convert("RGBA")
-        return self._pages[page_no].copy()
+            self._pages[key] = PILImage.open(path).convert("RGBA")
+        return self._pages[key].copy()
 
     def page_plan(self, job: JobSpec) -> list[tuple[int, str]]:
         """Official worksheet pages that will be included for the selected styles."""
+        family = self._job_family(job)
         seen: set[int] = set()
         plan: list[tuple[int, str]] = []
         for key in job.product_keys:
@@ -215,7 +298,7 @@ class WorksheetExporter:
                 if page_no in seen:
                     continue
                 seen.add(page_no)
-                plan.append((page_no, PAGE_TITLES.get(page_no, f"Page {page_no}")))
+                plan.append((page_no, self._page_title(family, page_no)))
         return plan
 
     def iter_job_pages(
@@ -230,14 +313,15 @@ class WorksheetExporter:
             if job.logo_color_name != "Match uploaded art":
                 fill = logo_color_rgb(job.logo_color_name)
             mark = self.renderer.prepare_logo(logo, job.resolved_knockout(), fill_rgb=fill)
+        family = self._job_family(job)
         seen: set[int] = set()
         for key in job.product_keys:
             for page_no in STYLE_PAGES.get(key, []):
                 if page_no in seen:
                     continue
                 seen.add(page_no)
-                yield page_no, PAGE_TITLES.get(page_no, f"Page {page_no}"), self._compose_page(
-                    page_no, job, mark
+                yield page_no, self._page_title(family, page_no), self._compose_page(
+                    page_no, job, mark, family=family
                 )
 
     def preview_jpegs(
@@ -265,15 +349,16 @@ class WorksheetExporter:
 
     def build_pdf(self, job: JobSpec, logo: PILImage.Image | None) -> bytes:
         buffer = BytesIO()
+        family = self._job_family(job)
         first_pages = STYLE_PAGES.get(job.product_keys[0], [1]) if job.product_keys else [1]
-        w, h = PAGE_SPEC[first_pages[0]]["size_pts"]
+        w, h = self._page_spec(family, first_pages[0])["size_pts"]
         c = canvas.Canvas(buffer, pagesize=(w, h))
-        c.setTitle(worksheet_filename(job.client, job.year).replace(".pdf", ""))
+        c.setTitle(worksheet_filename(job.client, job.year, family).replace(".pdf", ""))
         c.setAuthor("Weatherman Virtual Mockup Creator")
         c.setSubject("PRODUCTION WORKSHEET")
 
         for page_no, _title, page in self.iter_job_pages(job, logo):
-            spec = PAGE_SPEC[page_no]
+            spec = self._page_spec(family, page_no)
             c.setPageSize(spec["size_pts"])
             self._draw_full_page(c, page, spec["size_pts"])
             c.showPage()
@@ -286,9 +371,11 @@ class WorksheetExporter:
         page_no: int,
         job: JobSpec,
         mark: PILImage.Image | None,
+        *,
+        family: str = "umbrella",
     ) -> PILImage.Image:
-        page = self._template(page_no)
-        spec = PAGE_SPEC[page_no]
+        page = self._template(page_no, family)
+        spec = self._page_spec(family, page_no)
         fabric = job.fabric_rgb
         black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
         # Photo/sleeve heals sample already-tinted fabric. Running them before
@@ -299,7 +386,7 @@ class WorksheetExporter:
             if str(slot.get("erase") or "") not in post:
                 self._erase_slot(page, slot, black)
         if fabric != black:
-            page = self._recolor_fabric(page, fabric)
+            page = self._recolor_fabric(page, fabric, regions=spec.get("recolor_regions"))
         for slot in spec["logos"]:
             if str(slot.get("erase") or "") in post:
                 self._erase_slot(page, slot, fabric)
@@ -374,6 +461,25 @@ class WorksheetExporter:
                 outline_px,
                 fill=not bool(slot.get("outline_only")),
             )
+        quad = slot.get("quad")
+        if quad and len(quad) == 4:
+            import cv2
+            import numpy as np
+
+            dst = np.float32([_pt_xy(float(px), float(py)) for px, py in quad])
+            src_w, src_h = art.size
+            src = np.float32([[0, 0], [src_w, 0], [src_w, src_h], [0, src_h]])
+            matrix = cv2.getPerspectiveTransform(src, dst)
+            warped = cv2.warpPerspective(
+                np.array(art),
+                matrix,
+                (page.width, page.height),
+                flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=(0, 0, 0, 0),
+            )
+            page = composite(page, PILImage.fromarray(warped))
+            return
         px = x + (w - art.width) // 2
         py = y + (h - art.height) // 2
         page.paste(art, (px, py), art)
@@ -639,7 +745,12 @@ class WorksheetExporter:
         draw.text((cx + cw / 2, cy + ch * 0.34), label, font=font_a, fill=(255, 255, 255, 255), anchor="mm")
         draw.text((cx + cw / 2, cy + ch * 0.66), f"({config})", font=font_b, fill=(255, 255, 255, 255), anchor="mm")
 
-    def _recolor_fabric(self, page: PILImage.Image, fabric: tuple[int, int, int]) -> PILImage.Image:
+    def _recolor_fabric(
+        self,
+        page: PILImage.Image,
+        fabric: tuple[int, int, int],
+        regions: list[tuple[float, float, float, float]] | None = None,
+    ) -> PILImage.Image:
         """Shift near-black canopy/sleeve pixels toward the selected fabric."""
         import numpy as np
 
@@ -649,6 +760,13 @@ class WorksheetExporter:
         chroma = rgb.max(axis=2) - rgb.min(axis=2)
         # Include soft canopy shading so light fabrics do not leave charcoal patches.
         mask = (lum < 95) & (chroma < 36)
+        if regions:
+            allowed = np.zeros(mask.shape, dtype=bool)
+            for box in regions:
+                x, y, w, h = _pts(box)
+                y1, x1 = min(mask.shape[0], y + h), min(mask.shape[1], x + w)
+                allowed[max(0, y) : y1, max(0, x) : x1] = True
+            mask &= allowed
         if not mask.any():
             return page
         src = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype="int16")

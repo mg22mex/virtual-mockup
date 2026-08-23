@@ -38,9 +38,11 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 32
+STAMP_VERSION = 34
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
+FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
+FAMILY_KEYS = {"Umbrella": "umbrella", "Backpack": "backpack", "Poncho": "poncho"}
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -75,6 +77,7 @@ def _preview_pages(
     panel_config: str,
     panel_count: int,
     product_keys: tuple[str, ...],
+    family: str,
     fabric_name: str,
     logo_color_name: str,
     request_date: str,
@@ -94,6 +97,7 @@ def _preview_pages(
         panel_config=panel_config,
         panel_count=panel_count,
         product_keys=list(product_keys),
+        family=family,
         fabric_name=fabric_name,
         logo_color_name=logo_color_name,
         request_date=request_date,
@@ -142,30 +146,54 @@ def main() -> None:
             key=f"upd_{FORM_KEY}",
         ) or ""
 
-        labels = style_labels()
-        selected_labels = st.multiselect(
-            "Products",
-            options=list(labels.values()),
-            default=[],
-            placeholder="Choose styles",
-            key=f"products_{FORM_KEY}",
+        family_label = st.segmented_control(
+            "Product family",
+            FAMILY_OPTIONS,
+            key=f"family_{FORM_KEY}",
         )
-        label_to_key = {v: k for k, v in labels.items()}
-        product_keys = [label_to_key[label] for label in selected_labels]
+        family = FAMILY_KEYS.get(family_label or "")
 
-        panel_config = st.selectbox(
-            "Panel configuration",
-            PANEL_OPTIONS,
-            index=None,
-            placeholder="Choose panel configuration",
-            key=f"panel_{FORM_KEY}",
-        )
-        panel_count = {
-            "Standard 1 Panel": 1,
-            "Standard 2 Panel": 2,
-            "Standard 4 Panel": 4,
-            "All-over 8 Panel": 8,
-        }.get(panel_config or "", 0)
+        if family == "poncho":
+            st.caption(
+                "No production worksheet yet. Trail Hound Rain Vest is on Shopify "
+                "(Bone / Navy / Sage). Add an official sheet to enable proofs."
+            )
+            labels = {}
+            product_keys = []
+            panel_config = None
+            panel_count = 0
+        else:
+            labels = style_labels(family) if family else {}
+            selected_labels = st.multiselect(
+                "Products",
+                options=list(labels.values()) if labels else [],
+                default=[],
+                placeholder="Choose styles" if family else "Choose a product family first",
+                key=f"products_{FORM_KEY}_{family or 'none'}",
+                disabled=not bool(labels),
+            )
+            label_to_key = {v: k for k, v in labels.items()}
+            product_keys = [label_to_key[label] for label in selected_labels]
+
+            if family == "backpack":
+                panel_config = "Upper center"
+                panel_count = 1
+                st.caption("Artwork placement: upper center · 9.2 × 4.5 cm.")
+            else:
+                panel_config = st.selectbox(
+                    "Panel configuration",
+                    PANEL_OPTIONS,
+                    index=None,
+                    placeholder="Choose panel configuration",
+                    key=f"panel_{FORM_KEY}",
+                    disabled=family != "umbrella",
+                )
+                panel_count = {
+                    "Standard 1 Panel": 1,
+                    "Standard 2 Panel": 2,
+                    "Standard 4 Panel": 4,
+                    "All-over 8 Panel": 8,
+                }.get(panel_config or "", 0)
 
         fabric_options = fabrics_for_styles(product_keys) if product_keys else []
         if fabric_options:
@@ -229,9 +257,13 @@ def main() -> None:
     missing = []
     if not client.strip():
         missing.append("client")
+    if not family:
+        missing.append("product family")
+    elif family == "poncho":
+        missing.append("a poncho worksheet (not available yet)")
     if not product_keys:
         missing.append("products")
-    if not panel_config:
+    if family == "umbrella" and not panel_config:
         missing.append("panel configuration")
     if not fabric:
         missing.append("fabric")
@@ -251,6 +283,7 @@ def main() -> None:
         panel_config=panel_config,
         panel_count=panel_count,
         product_keys=product_keys,
+        family=family or "umbrella",
         fabric_name=fabric,
         logo_color_name=logo_color,
         request_date=request_date.strip() or "—",
@@ -268,6 +301,7 @@ def main() -> None:
             "panel_config": panel_config,
             "panel_count": panel_count,
             "products": product_keys,
+            "family": family,
             "fabric": fabric,
             "logo_color": logo_color,
             "project_owner": job.project_owner,
@@ -309,7 +343,7 @@ def main() -> None:
 
     logo_fp = _logo_fingerprint(logo_bytes, logo_name)
     job_fp = (
-        f"{STAMP_VERSION}|{job.client}|{job.panel_config}|{job.panel_count}|"
+        f"{STAMP_VERSION}|{job.client}|{job.family}|{job.panel_config}|{job.panel_count}|"
         f"{','.join(job.product_keys)}|{job.fabric_name}|{job.logo_color_name}|"
         f"{job.request_date}|{job.last_update}|{job.project_owner}|{job.print_order}|"
         f"{job.year}|{job.knockout_mode}|{job.knockout_white}|{logo_fp}"
@@ -331,6 +365,7 @@ def main() -> None:
                 job.panel_config,
                 job.panel_count,
                 tuple(job.product_keys),
+                job.family,
                 job.fabric_name,
                 job.logo_color_name,
                 job.request_date,
@@ -357,10 +392,10 @@ def main() -> None:
         page_plan = exporter.page_plan(job)
         page_labels = [title for _no, title in page_plan]
         st.write(
-            f"**File:** `{worksheet_filename(job.client, job.year)}`  \n"
+            f"**File:** `{worksheet_filename(job.client, job.year, job.family)}`  \n"
             f"**Fabric:** {fabric_caption(job.fabric_name)}  \n"
             f"**Logo:** {job.logo_color_name}  \n"
-            f"**Panels:** {panel_config}  \n"
+            f"**Placement:** {panel_config}  \n"
             f"**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
         )
         if not logo:
@@ -374,7 +409,7 @@ def main() -> None:
         if generate:
             with st.spinner(f"Composing {len(page_plan)}-page worksheet…"):
                 pdf_bytes = exporter.build_pdf(job, logo)
-            out_name = worksheet_filename(job.client, job.year)
+            out_name = worksheet_filename(job.client, job.year, job.family)
             out_path = OUTPUT_DIR / out_name
             out_path.write_bytes(pdf_bytes)
             st.session_state["pdf_bytes"] = pdf_bytes

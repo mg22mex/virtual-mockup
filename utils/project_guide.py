@@ -55,8 +55,12 @@ flowchart TB
     G3[Page 3 · Graphic sizing]
     G4[Page 4 · Sleeve]
   end
+  subgraph Pack["Backpack"]
+    B1[Venture Dry Pack · M13 sheet]
+  end
   Job[Selected products] --> Stick
   Job --> Golf
+  Job --> Pack
 """
 
 BUILD_TIMELINE = """
@@ -106,7 +110,7 @@ def render_project_guide(*, stamp_version: int) -> None:
             c4.metric("Vector formats", len(SUPPORTED_EXTS))
             c5.metric("Stamp engine", f"v{stamp_version}")
             st.caption(
-                "Artwork bound 21.6 × 10 cm (Walk/Golf). Logos: "
+                "Walk/Golf artwork 21.6 × 10 cm. Venture Dry Pack 9.2 × 4.5 cm. Logos: "
                 + ", ".join(ext.lstrip(".").upper() for ext in SUPPORTED_EXTS)
                 + "."
             )

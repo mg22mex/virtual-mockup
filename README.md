@@ -26,8 +26,10 @@ related views).
    where needed, and stamps the client logo into the mapped slots.
 4. On-screen proof shows the official pages; **Generate** writes a PDF for download.
 
-Supported style families include Walk / Stick-family pages and Golf Essential
-(with graphic sizing and sleeve sheets when selected). Artwork bounds follow
+Supported style families include Walk / Stick-family pages, Golf Essential
+(with graphic sizing and sleeve sheets when selected), and the Venture Dry Pack
+backpack worksheet (M13). Ponchos (Trail Hound Rain Vest) are listed in the UI
+but wait on an official sheet. Artwork bounds follow
 Weatherman production standards (e.g. 21.6 cm × 10 cm Walk/Golf panels).
 
 ---

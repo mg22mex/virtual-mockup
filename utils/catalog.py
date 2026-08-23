@@ -43,9 +43,19 @@ def logo_knockout_mode(name: str) -> str:
     return "none"
 
 
-def style_labels() -> dict[str, str]:
+def style_family(key: str) -> str:
+    spec = product_specs().get(key) or {}
+    return str(spec.get("family") or "umbrella")
+
+
+def style_labels(family: str | None = None) -> dict[str, str]:
     labels: dict[str, str] = {}
     for key, spec in product_specs().items():
+        if family and style_family(key) != family:
+            continue
+        if style_family(key) == "backpack":
+            labels[key] = f"{spec['display_name']} · Style #: {spec.get('style_number')}"
+            continue
         cov = spec.get("frame_coverage_in")
         opening = spec.get("opening") or spec.get("subtitle")
         extra = f"{cov}\" · {opening}" if cov else str(opening)
