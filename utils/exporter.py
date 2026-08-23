@@ -102,15 +102,37 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
             "project_owner": (1105, 143, 160, 32),
             "print_order": (1105, 190, 160, 32),
         },
+        # Rectangular regions for flat art; photo uses a silhouette polygon so coat stays clean.
         "recolor_regions": [
-            (300, 580, 640, 900),
-            (560, 1880, 760, 1120),
+            (580, 1880, 840, 1180),  # line drawing — must cover right side panel (was clipped → black bar)
+        ],
+        "recolor_polys": [
+            # Lifestyle photo — front panel + side (PDF pts). Left/bottom stay clear of coat.
+            [
+                (540, 755),
+                (595, 730),
+                (680, 720),
+                (750, 735),
+                (795, 785),
+                (820, 880),
+                (830, 1000),
+                (825, 1150),
+                (805, 1280),
+                (765, 1350),
+                (680, 1375),
+                (590, 1365),
+                (550, 1310),
+                (535, 1180),
+                (532, 1020),
+                (535, 900),
+                (540, 810),
+            ],
         ],
         "colors": {
-            "logo_swatch": (56, 2040, 90, 52),
-            "logo_label": (160, 2038, 280, 56),
-            "fabric_swatch": (56, 1890, 90, 52),
-            "fabric_label": (160, 1888, 320, 56),
+            "logo_swatch": (56, 2068, 90, 48),
+            "logo_label": (155, 2065, 300, 54),
+            "fabric_swatch": (56, 1890, 90, 48),
+            "fabric_label": (155, 1888, 300, 52),
             "font_pt": 16,
         },
     },
@@ -397,7 +419,12 @@ class WorksheetExporter:
             if str(slot.get("erase") or "") not in post:
                 self._erase_slot(page, slot, black)
         if fabric != black:
-            page = self._recolor_fabric(page, fabric, regions=spec.get("recolor_regions"))
+            page = self._recolor_fabric(
+                page,
+                fabric,
+                regions=spec.get("recolor_regions"),
+                polygons=spec.get("recolor_polys"),
+            )
         for slot in spec["logos"]:
             if str(slot.get("erase") or "") in post:
                 self._erase_slot(page, slot, fabric)
@@ -790,8 +817,15 @@ class WorksheetExporter:
         page: PILImage.Image,
         fabric: tuple[int, int, int],
         regions: list[tuple[float, float, float, float]] | None = None,
+        polygons: list[list[tuple[float, float]]] | None = None,
     ) -> PILImage.Image:
-        """Shift near-black canopy/sleeve pixels toward the selected fabric."""
+        """Shift near-black fabric pixels toward the selected color.
+
+        Optional ``regions`` (axis-aligned) and ``polygons`` (PDF-point silhouettes)
+        limit which pixels may change — used so backpack photo recolor cannot
+        spill onto the model's coat, and line-art fills cover the full bag body.
+        """
+        import cv2
         import numpy as np
 
         arr = np.array(page.convert("RGBA"))
@@ -800,13 +834,29 @@ class WorksheetExporter:
         chroma = rgb.max(axis=2) - rgb.min(axis=2)
         # Include soft canopy shading so light fabrics do not leave charcoal patches.
         mask = (lum < 95) & (chroma < 36)
-        if regions:
+        if regions or polygons:
             allowed = np.zeros(mask.shape, dtype=bool)
-            for box in regions:
+            for box in regions or []:
                 x, y, w, h = _pts(box)
                 y1, x1 = min(mask.shape[0], y + h), min(mask.shape[1], x + w)
                 allowed[max(0, y) : y1, max(0, x) : x1] = True
+            if polygons:
+                poly_layer = np.zeros(mask.shape, dtype=np.uint8)
+                for poly in polygons:
+                    if len(poly) < 3:
+                        continue
+                    pts = np.array([_pt_xy(float(px), float(py)) for px, py in poly], dtype=np.int32)
+                    cv2.fillPoly(poly_layer, [pts], 1)
+                # Pull 2px off the silhouette edge so coat fringe never picks up fabric tint.
+                poly_layer = cv2.erode(poly_layer, np.ones((5, 5), np.uint8), iterations=1)
+                allowed |= poly_layer.astype(bool)
             mask &= allowed
+            # Drop olive/coat-like pixels that still fall inside the silhouette.
+            if polygons:
+                poly_only = poly_layer.astype(bool)
+                g_dom = rgb[:, :, 1].astype("int16") - np.maximum(rgb[:, :, 0], rgb[:, :, 2]).astype("int16")
+                fringe = poly_only & ((chroma >= 26) | (g_dom > 8))
+                mask &= ~fringe
         if not mask.any():
             return page
         src = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype="int16")
