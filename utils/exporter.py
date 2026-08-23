@@ -95,7 +95,13 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
             # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
             {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "ink"},
         ],
-        "chip": (1290, 48, 400, 170),
+        "chip": (1310, 60, 390, 150),
+        "header_fields": {
+            "request_date": (1105, 48, 160, 30),
+            "last_update": (1105, 95, 160, 32),
+            "project_owner": (1105, 143, 160, 32),
+            "print_order": (1105, 190, 160, 32),
+        },
         "recolor_regions": [
             (300, 580, 640, 900),
             (560, 1880, 760, 1120),
@@ -125,6 +131,12 @@ PAGE_SPEC: dict[int, dict] = {
             {"box": (758, 2504, 610, 165), "cover": (742, 2488, 644, 200), "erase": "flat"},
         ],
         "chip": (1300, 50, 618, 168),
+        "header_fields": {
+            "request_date": (1105, 48, 160, 30),
+            "last_update": (1105, 95, 160, 32),
+            "project_owner": (1105, 143, 160, 32),
+            "print_order": (1105, 190, 160, 32),
+        },
         "colors": {
             "logo_swatch": (59, 1877, 100, 44),
             "logo_label": (164, 1873, 270, 45),
@@ -747,6 +759,23 @@ class WorksheetExporter:
 
     def _stamp_header(self, page: PILImage.Image, spec: dict, job: JobSpec) -> None:
         draw = ImageDraw.Draw(page)
+        fields = spec.get("header_fields") or {}
+        if fields:
+            font_meta = _font(False, int(16 * SCALE))
+            values = {
+                "request_date": job.request_date or "—",
+                "last_update": job.last_update or "—",
+                "project_owner": job.project_owner or "—",
+                "print_order": job.print_order or "—",
+            }
+            for key, box in fields.items():
+                text = str(values.get(key) or "—")
+                if text in {"", "—"} and key == "print_order":
+                    text = "—"
+                x, y, w, h = _pts(box)
+                draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+                draw.text((x, y + h * 0.5), text, font=font_meta, fill=NAVY + (255,), anchor="lm")
+
         cx, cy, cw, ch = _pts(spec["chip"])
         draw.rounded_rectangle((cx, cy, cx + cw, cy + ch), radius=int(6 * SCALE), fill=NAVY + (255,))
         label = job.client.strip() or "Client"

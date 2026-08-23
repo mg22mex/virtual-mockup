@@ -38,7 +38,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 35
+STAMP_VERSION = 36
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -121,6 +121,25 @@ def main() -> None:
     )
     if WM_MARK.exists():
         st.logo(str(WM_MARK), size="large")
+
+    # Selected multiselect/segmented chips use theme.primaryColor (Weatherman coral).
+    # Soften those to navy so they don't read as Streamlit validation errors.
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] span[data-baseweb="tag"] {
+            background-color: #262D65 !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stSidebar"] span[data-baseweb="tag"] span,
+        [data-testid="stSidebar"] span[data-baseweb="tag"] svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     memory, logger, exporter = _init(STAMP_VERSION)
 
@@ -356,7 +375,7 @@ def main() -> None:
 
     left, right = st.columns([2, 1], vertical_alignment="top")
     with left:
-        st.badge(job.client_label, color="primary")
+        st.badge(job.client_label, color="gray", icon=":material/checkroom:")
         st.subheader("Production worksheet")
         with st.spinner("Updating worksheet preview…"):
             pages = _preview_pages(
