@@ -22,7 +22,6 @@ from .renderer import (
     NAVY,
     JobSpec,
     MockupRenderer,
-    composite,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -466,19 +465,31 @@ class WorksheetExporter:
             import cv2
             import numpy as np
 
+            # Warp into the quad's bounding box only — a full-page warpPerspective
+            # (~4252×6520 RGBA) spikes RSS past Streamlit Cloud's memory limit.
             dst = np.float32([_pt_xy(float(px), float(py)) for px, py in quad])
+            x0 = max(0, int(np.floor(float(dst[:, 0].min()))) - 1)
+            y0 = max(0, int(np.floor(float(dst[:, 1].min()))) - 1)
+            x1 = min(page.width, int(np.ceil(float(dst[:, 0].max()))) + 1)
+            y1 = min(page.height, int(np.ceil(float(dst[:, 1].max()))) + 1)
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                return
+            local = dst.copy()
+            local[:, 0] -= x0
+            local[:, 1] -= y0
             src_w, src_h = art.size
             src = np.float32([[0, 0], [src_w, 0], [src_w, src_h], [0, src_h]])
-            matrix = cv2.getPerspectiveTransform(src, dst)
+            matrix = cv2.getPerspectiveTransform(src, local)
             warped = cv2.warpPerspective(
                 np.array(art),
                 matrix,
-                (page.width, page.height),
+                (x1 - x0, y1 - y0),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(0, 0, 0, 0),
             )
-            page = composite(page, PILImage.fromarray(warped))
+            overlay = PILImage.fromarray(warped)
+            page.paste(overlay, (x0, y0), overlay)
             return
         px = x + (w - art.width) // 2
         py = y + (h - art.height) // 2
