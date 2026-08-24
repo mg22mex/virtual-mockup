@@ -91,8 +91,15 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "cover": (540, 845, 300, 170),
                 "erase": "photo",
             },
-            # Artwork callout — remove sample ink only; keep the charcoal plate.
-            {"box": (1268, 890, 455, 221), "cover": (1248, 870, 495, 280), "erase": "ink"},
+            # Artwork callout — solid charcoal plate, crisp centered logo.
+            {
+                "box": (1268, 890, 455, 221),
+                "cover": (1248, 870, 495, 280),
+                "erase": "plate",
+                "plate": (48, 48, 50),
+                "crisp": True,
+                "fit_pad": 0.06,
+            },
             # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
             {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "flat"},
         ],
@@ -391,7 +398,7 @@ class WorksheetExporter:
         # Photo/sleeve heals sample already-tinted fabric. Running them before
         # recolor left a gray plate (skipped by the lum<95 shift) and leftover
         # bevels that read as a ghost under the new mark.
-        post = {"photo", "sleeve"}
+        post = {"photo", "sleeve", "plate"}
         for slot in spec["logos"]:
             if str(slot.get("erase") or "") not in post:
                 self._erase_slot(page, slot, black)
@@ -448,6 +455,9 @@ class WorksheetExporter:
             self._erase_pale_on_fabric(page, cover, fabric, fill=True)
         elif erase == "block":
             self._fill_cover(page, cover, fabric)
+        elif erase == "plate":
+            plate = slot.get("plate") or (48, 48, 50)
+            self._fill_cover(page, cover, tuple(int(v) for v in plate))
         elif erase == "schematic":
             self._clear_schematic_fill(page, cover, (255, 255, 255))
 
@@ -478,10 +488,11 @@ class WorksheetExporter:
             return
         outline = slot.get("outline")
         outline_px = max(1, int(round(float(slot.get("outline_pt") or 0) * SCALE))) if outline else 0
-        fit_w = max(1, w - outline_px * 2)
-        fit_h = max(1, h - outline_px * 2)
+        pad = float(slot.get("fit_pad") or 0.0)
+        fit_w = max(1, int(round((w - outline_px * 2) * (1.0 - pad))))
+        fit_h = max(1, int(round((h - outline_px * 2) * (1.0 - pad))))
         # Uniform scale: min(fit_w/w, fit_h/h) — preserves kerning / glyph aspect.
-        art = fit_logo_uniform(art, fit_w, fit_h)
+        art = fit_logo_uniform(art, fit_w, fit_h, crisp=bool(slot.get("crisp")))
         if outline:
             art = _outline_mark(
                 art,

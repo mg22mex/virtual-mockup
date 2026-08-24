@@ -773,20 +773,38 @@ class MockupRenderer:
         return written
 
 
-def fit_logo_uniform(logo: Image.Image, max_w: int, max_h: int) -> Image.Image:
-    """Scale logo with ``min(max_w/w, max_h/h)`` so kerning and aspect stay intact."""
+def fit_logo_uniform(
+    logo: Image.Image,
+    max_w: int,
+    max_h: int,
+    *,
+    crisp: bool = False,
+) -> Image.Image:
+    """Scale logo with ``min(max_w/w, max_h/h)`` so kerning and aspect stay intact.
+
+    When ``crisp`` is True, alpha is hardened after resize so LANCZOS fringe
+    does not feather the mark into the plate (Artwork callout).
+    """
     img = logo.convert("RGBA")
     if img.width < 1 or img.height < 1:
         return img
     scale = min(max(1, int(max_w)) / img.width, max(1, int(max_h)) / img.height)
     if scale >= 0.999 and img.width <= max_w and img.height <= max_h:
-        return img
-    nw = max(1, int(round(img.width * scale)))
-    nh = max(1, int(round(nw * img.height / img.width)))
-    if nh > max_h:
-        nh = max(1, int(max_h))
-        nw = max(1, int(round(nh * img.width / img.height)))
-    return img.resize((nw, nh), Image.Resampling.LANCZOS)
+        out = img
+    else:
+        nw = max(1, int(round(img.width * scale)))
+        nh = max(1, int(round(nw * img.height / img.width)))
+        if nh > max_h:
+            nh = max(1, int(max_h))
+            nw = max(1, int(round(nh * img.width / img.height)))
+        out = img.resize((nw, nh), Image.Resampling.LANCZOS)
+    if crisp:
+        arr = np.array(out)
+        alpha = arr[:, :, 3]
+        # Drop soft fringe; keep near-opaque ink fully solid.
+        arr[:, :, 3] = np.where(alpha < 96, 0, 255).astype(np.uint8)
+        out = Image.fromarray(arr, "RGBA")
+    return out
 
 
 def _load_alpha_mask(path: Path, size: tuple[int, int]) -> Image.Image | None:
@@ -868,16 +886,21 @@ def tint_with_alpha_mask(
     else:
         # Additive NRF→fabric shift only (no luminance multiply). Multiply on olive
         # coat fringe produced lime/yellow highlights at soft mask edges.
-        r_c, g_c, b_c = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+        r_c = rgb[:, :, 0].astype(np.float32)
+        g_c = rgb[:, :, 1].astype(np.float32)
+        b_c = rgb[:, :, 2].astype(np.float32)
         lum = rgb.mean(axis=2)
         chroma = rgb.max(axis=2) - rgb.min(axis=2)
         g_dom = g_c - np.maximum(r_c, b_c)
-        reject = ((g_dom > 6) & (lum > 48) & (lum < 190)) | (
-            (chroma >= 26) & (g_dom > 4) & (lum > 55)
+        # Olive/khaki coat (incl. weak g_dom≈2 fringe under the bag hem).
+        reject = (
+            ((g_dom > 1.8) & (lum > 50) & (lum < 200) & (chroma > 8))
+            | ((g_dom > 6) & (lum > 48) & (lum < 190))
+            | ((chroma >= 26) & (g_dom > 4) & (lum > 55))
         )
         a = np.where(reject[..., None], 0.0, a)
         # Harden remaining soft fringe so coat never gets a translucent blue wash.
-        a = np.where(a < 0.35, 0.0, np.clip((a - 0.35) / 0.65, 0.0, 1.0))
+        a = np.where(a < 0.40, 0.0, np.clip((a - 0.40) / 0.60, 0.0, 1.0))
         tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
 
     blended = rgb * (1.0 - a) + tinted * a
