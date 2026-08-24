@@ -399,7 +399,17 @@ class WorksheetExporter:
                 self._erase_slot(page, slot, black)
         if fabric != black:
             if family == "backpack" or spec.get("recolor_masks"):
-                page = self.renderer.recolor_backpack_page(page, fabric)
+                tinted = self.renderer.recolor_backpack_page(page, fabric)
+                if tinted is not None:
+                    page = tinted
+                else:
+                    # Masks missing/unreadable → rectangular fallback (no crash).
+                    page = self._recolor_fabric(
+                        page,
+                        fabric,
+                        regions=[(555, 1830, 890, 1280)],
+                        max_lum=125,
+                    )
             else:
                 page = self._recolor_fabric(
                     page,

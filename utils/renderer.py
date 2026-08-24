@@ -241,23 +241,34 @@ class MockupRenderer:
         self,
         page: Image.Image,
         fabric_rgb: tuple[int, int, int],
-    ) -> Image.Image:
+    ) -> Image.Image | None:
         """Tint Venture Dry Pack photo + line-art via pre-cut alpha masks.
 
         Uses ``backpack_mask.png`` / ``backpack_lineart_mask.png`` so the coat,
         wall, and worksheet paper stay untouched — no runtime polygon fills.
+
+        Returns ``None`` if masks are missing or tinting fails so the caller can
+        fall back without crashing the Streamlit session.
         """
         black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
         if fabric_rgb == black:
             return page
-        out = page.convert("RGBA")
-        photo = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size)
-        if photo is not None:
-            out = tint_with_alpha_mask(out, fabric_rgb, photo, mode="photo")
-        line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
-        if line is not None:
-            out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
-        return out
+        try:
+            out = page.convert("RGBA")
+            applied = False
+            photo = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size)
+            if photo is not None:
+                out = tint_with_alpha_mask(out, fabric_rgb, photo, mode="photo")
+                applied = True
+                del photo
+            line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
+            if line is not None:
+                out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
+                applied = True
+                del line
+            return out if applied else None
+        except Exception:
+            return None
 
     # ----------------------------------------------------------- WM brand mark
     def weatherman_mark(self, size: int, fill: tuple[int, int, int] = WHITE, bg=NAVY) -> Image.Image:
@@ -779,13 +790,33 @@ def fit_logo_uniform(logo: Image.Image, max_w: int, max_h: int) -> Image.Image:
 
 
 def _load_alpha_mask(path: Path, size: tuple[int, int]) -> Image.Image | None:
-    if not path.is_file():
+    """Load an L-mode alpha mask resized to ``size``, or None if unavailable."""
+    try:
+        if not path.is_file():
+            return None
+        with Image.open(path) as mask:
+            mask = mask.copy()
+        if mask.mode in {"RGBA", "LA"}:
+            alpha = mask.split()[-1]
+        elif mask.mode == "L":
+            alpha = mask
+        else:
+            alpha = mask.convert("L")
+        if alpha.size != size:
+            if size[0] < 1 or size[1] < 1:
+                return None
+            alpha = alpha.resize(size, Image.Resampling.BILINEAR)
+        return alpha
+    except Exception:
         return None
-    mask = Image.open(path)
-    alpha = mask.split()[-1] if mask.mode in {"RGBA", "LA"} else mask.convert("L")
-    if alpha.size != size:
-        alpha = alpha.resize(size, Image.Resampling.BILINEAR)
-    return alpha
+
+
+def _mask_bbox(alpha_u8: np.ndarray, threshold: int = 5) -> tuple[int, int, int, int] | None:
+    """Return inclusive-exclusive (y0, y1, x0, x1) for pixels above threshold."""
+    ys, xs = np.where(alpha_u8 > threshold)
+    if ys.size == 0:
+        return None
+    return int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
 
 
 def tint_with_alpha_mask(
@@ -799,48 +830,51 @@ def tint_with_alpha_mask(
 
     ``mode="photo"`` preserves lifestyle shading via luminance multiply.
     ``mode="flat"`` lifts pure-black line-art fills so handles/mesh match the body.
+
+    Only the mask bounding box is processed (full-page float32 blends OOM on Cloud).
     """
-    from PIL import ImageChops
-
     page_rgba = page.convert("RGBA")
-    rgb = page_rgba.convert("RGB")
-    alpha = alpha_mask.convert("L")
-    if alpha.size != rgb.size:
-        alpha = alpha.resize(rgb.size, Image.Resampling.BILINEAR)
-
-    src = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
-    dst = tuple(int(v) for v in fabric_rgb)
-    arr = np.array(rgb, dtype=np.float32)
-    a = np.array(alpha, dtype=np.float32) / 255.0
-    if not np.any(a > 0.01):
+    if page_rgba.width < 1 or page_rgba.height < 1:
         return page_rgba
-    a = np.clip(a, 0.0, 1.0)[..., None]
-    src_a = np.array(src, dtype=np.float32)
-    dst_a = np.array(dst, dtype=np.float32)
+
+    alpha_img = alpha_mask.convert("L")
+    if alpha_img.size != page_rgba.size:
+        alpha_img = alpha_img.resize(page_rgba.size, Image.Resampling.BILINEAR)
+
+    alpha_u8 = np.asarray(alpha_img, dtype=np.uint8)
+    bbox = _mask_bbox(alpha_u8)
+    if bbox is None:
+        return page_rgba
+    y0, y1, x0, x1 = bbox
+
+    out = np.array(page_rgba, copy=True)
+    if out.ndim != 3 or out.shape[2] < 3:
+        return page_rgba
+    if out.shape[0] != alpha_u8.shape[0] or out.shape[1] != alpha_u8.shape[1]:
+        raise ValueError(
+            f"page/mask size mismatch: page {out.shape[:2]} vs mask {alpha_u8.shape}"
+        )
+
+    rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
+    a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
+    a = np.clip(a, 0.0, 1.0)
+
+    src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
+    dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
 
     if mode == "flat":
-        # Pure black (0,0,0) fills are darker than NRF Black — lift then shift.
-        work = np.maximum(arr, src_a)
+        work = np.maximum(rgb, src_a)
         tinted = np.clip(work + (dst_a - src_a), 0, 255)
     else:
-        # Luminance multiply (PIL ImageChops.multiply) toward fabric, blended with
-        # an additive NRF shift so midtones stay close to the selected swatch.
-        gray = rgb.convert("L")
-        # Map reference black → white plate so multiply yields ``fabric`` on NRF black.
         ref = max(float(np.mean(src_a)), 1.0)
-        plate = Image.new("RGB", rgb.size, dst)
-        # Strength layer: brighter original → stronger multiply contribution.
-        strength = gray.point(lambda p: int(np.clip(p / ref * 255.0, 0, 255)))
-        strength_rgb = Image.merge("RGB", (strength, strength, strength))
-        multiplied = ImageChops.multiply(plate, strength_rgb)
-        mult = np.array(multiplied, dtype=np.float32)
-        shifted = np.clip(np.maximum(arr, src_a) + (dst_a - src_a), 0, 255)
-        tinted = 0.5 * mult + 0.5 * shifted
+        lum = np.clip(rgb.mean(axis=2, keepdims=True) / ref, 0.2, 2.8)
+        multiplied = np.clip(dst_a * lum, 0, 255)
+        shifted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
+        tinted = 0.5 * multiplied + 0.5 * shifted
 
-    out = arr * (1.0 - a) + tinted * a
-    result = np.array(page_rgba)
-    result[:, :, :3] = np.clip(out, 0, 255).astype(np.uint8)
-    return Image.fromarray(result, "RGBA")
+    blended = rgb * (1.0 - a) + tinted * a
+    out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
+    return Image.fromarray(out, "RGBA")
 
 
 def fabric_swatch_names() -> list[str]:
