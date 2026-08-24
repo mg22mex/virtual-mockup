@@ -489,13 +489,14 @@ def main() -> None:
     render_project_guide(stamp_version=STAMP_VERSION)
 
 
-try:
-    main()
-except Exception:  # noqa: BLE001 — Cloud "Oh no" hides the real traceback
-    _tb = traceback.format_exc()
-    print(_tb, flush=True)
+if __name__ == "__main__":
     try:
-        st.error("The app failed while starting. Traceback is below.")
-        st.code(_tb, language="text")
-    except Exception:
-        pass
+        main()
+    except Exception:  # noqa: BLE001 — Cloud "Oh no" hides the real traceback
+        _tb = traceback.format_exc()
+        print(_tb, flush=True)
+        try:
+            st.error("The app failed while starting. Traceback is below.")
+            st.code(_tb, language="text")
+        except Exception:
+            pass
