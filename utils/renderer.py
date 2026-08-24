@@ -19,6 +19,9 @@ from .catalog import fabric_rgb_map, product_specs
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = ROOT / "assets" / "templates"
+BACKPACK_DIR = TEMPLATE_DIR / "official" / "backpack"
+BACKPACK_PHOTO_MASK = BACKPACK_DIR / "backpack_mask.png"
+BACKPACK_LINEART_MASK = BACKPACK_DIR / "backpack_lineart_mask.png"
 
 NAVY = (38, 45, 101)
 HEADER_BG = (246, 245, 243)
@@ -230,9 +233,31 @@ class MockupRenderer:
         return trimmed
 
     def _fit_logo(self, logo: Image.Image, max_w: int, max_h: int) -> Image.Image:
-        img = logo.convert("RGBA")
-        img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
-        return img
+        """Uniform fit: scale = min(max_w/w, max_h/h). Never stretches glyphs."""
+        return fit_logo_uniform(logo, max_w, max_h)
+
+    # ---------------------------------------------------- backpack fabric tint
+    def recolor_backpack_page(
+        self,
+        page: Image.Image,
+        fabric_rgb: tuple[int, int, int],
+    ) -> Image.Image:
+        """Tint Venture Dry Pack photo + line-art via pre-cut alpha masks.
+
+        Uses ``backpack_mask.png`` / ``backpack_lineart_mask.png`` so the coat,
+        wall, and worksheet paper stay untouched — no runtime polygon fills.
+        """
+        black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
+        if fabric_rgb == black:
+            return page
+        out = page.convert("RGBA")
+        photo = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size)
+        if photo is not None:
+            out = tint_with_alpha_mask(out, fabric_rgb, photo, mode="photo")
+        line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
+        if line is not None:
+            out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
+        return out
 
     # ----------------------------------------------------------- WM brand mark
     def weatherman_mark(self, size: int, fill: tuple[int, int, int] = WHITE, bg=NAVY) -> Image.Image:
@@ -735,6 +760,87 @@ class MockupRenderer:
         mark.save(mark_path)
         written.append(mark_path)
         return written
+
+
+def fit_logo_uniform(logo: Image.Image, max_w: int, max_h: int) -> Image.Image:
+    """Scale logo with ``min(max_w/w, max_h/h)`` so kerning and aspect stay intact."""
+    img = logo.convert("RGBA")
+    if img.width < 1 or img.height < 1:
+        return img
+    scale = min(max(1, int(max_w)) / img.width, max(1, int(max_h)) / img.height)
+    if scale >= 0.999 and img.width <= max_w and img.height <= max_h:
+        return img
+    nw = max(1, int(round(img.width * scale)))
+    nh = max(1, int(round(nw * img.height / img.width)))
+    if nh > max_h:
+        nh = max(1, int(max_h))
+        nw = max(1, int(round(nh * img.width / img.height)))
+    return img.resize((nw, nh), Image.Resampling.LANCZOS)
+
+
+def _load_alpha_mask(path: Path, size: tuple[int, int]) -> Image.Image | None:
+    if not path.is_file():
+        return None
+    mask = Image.open(path)
+    alpha = mask.split()[-1] if mask.mode in {"RGBA", "LA"} else mask.convert("L")
+    if alpha.size != size:
+        alpha = alpha.resize(size, Image.Resampling.BILINEAR)
+    return alpha
+
+
+def tint_with_alpha_mask(
+    page: Image.Image,
+    fabric_rgb: tuple[int, int, int],
+    alpha_mask: Image.Image,
+    *,
+    mode: str = "photo",
+) -> Image.Image:
+    """Apply fabric color under a pre-cut alpha channel (multiply + shift blend).
+
+    ``mode="photo"`` preserves lifestyle shading via luminance multiply.
+    ``mode="flat"`` lifts pure-black line-art fills so handles/mesh match the body.
+    """
+    from PIL import ImageChops
+
+    page_rgba = page.convert("RGBA")
+    rgb = page_rgba.convert("RGB")
+    alpha = alpha_mask.convert("L")
+    if alpha.size != rgb.size:
+        alpha = alpha.resize(rgb.size, Image.Resampling.BILINEAR)
+
+    src = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
+    dst = tuple(int(v) for v in fabric_rgb)
+    arr = np.array(rgb, dtype=np.float32)
+    a = np.array(alpha, dtype=np.float32) / 255.0
+    if not np.any(a > 0.01):
+        return page_rgba
+    a = np.clip(a, 0.0, 1.0)[..., None]
+    src_a = np.array(src, dtype=np.float32)
+    dst_a = np.array(dst, dtype=np.float32)
+
+    if mode == "flat":
+        # Pure black (0,0,0) fills are darker than NRF Black — lift then shift.
+        work = np.maximum(arr, src_a)
+        tinted = np.clip(work + (dst_a - src_a), 0, 255)
+    else:
+        # Luminance multiply (PIL ImageChops.multiply) toward fabric, blended with
+        # an additive NRF shift so midtones stay close to the selected swatch.
+        gray = rgb.convert("L")
+        # Map reference black → white plate so multiply yields ``fabric`` on NRF black.
+        ref = max(float(np.mean(src_a)), 1.0)
+        plate = Image.new("RGB", rgb.size, dst)
+        # Strength layer: brighter original → stronger multiply contribution.
+        strength = gray.point(lambda p: int(np.clip(p / ref * 255.0, 0, 255)))
+        strength_rgb = Image.merge("RGB", (strength, strength, strength))
+        multiplied = ImageChops.multiply(plate, strength_rgb)
+        mult = np.array(multiplied, dtype=np.float32)
+        shifted = np.clip(np.maximum(arr, src_a) + (dst_a - src_a), 0, 255)
+        tinted = 0.5 * mult + 0.5 * shifted
+
+    out = arr * (1.0 - a) + tinted * a
+    result = np.array(page_rgba)
+    result[:, :, :3] = np.clip(out, 0, 255).astype(np.uint8)
+    return Image.fromarray(result, "RGBA")
 
 
 def fabric_swatch_names() -> list[str]:

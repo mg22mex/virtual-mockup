@@ -22,6 +22,7 @@ from .renderer import (
     NAVY,
     JobSpec,
     MockupRenderer,
+    fit_logo_uniform,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -77,23 +78,25 @@ _BACKPACK_ART_H_CM = 4.5
 _BACKPACK_DRAW_CENTER = (1041.5, 2275.0)
 _BACKPACK_DRAW_BOX = _cm_box(*_BACKPACK_DRAW_CENTER, _BACKPACK_ART_W_CM, _BACKPACK_ART_H_CM)
 _dx, _dy, _dw, _dh = _BACKPACK_DRAW_BOX
-_BACKPACK_DRAW_COVER = (_dx - 15.0, _dy - 15.0, _dw + 30.0, _dh + 30.0)
+# Generous cover so the sample M13 (wider than the 9.2×4.5 art bound) is fully cleared.
+_BACKPACK_DRAW_COVER = (_dx - 55.0, _dy - 45.0, _dw + 110.0, _dh + 90.0)
 
 BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — perspective quad traced from the official M13 mark.
+            # Front-view photo — uniform scale + slight tilt (no perspective quad;
+            # quads stretch wide wordmarks like Proper and break letter-spacing).
             {
-                "box": (611, 872, 149, 90),
-                "cover": (590, 855, 198, 125),
+                "box": (560, 885, 256, 72),
+                "cover": (530, 840, 320, 160),
                 "erase": "photo",
-                "quad": [(627.5, 871.5), (760.5, 907.0), (753.0, 960.5), (611.5, 931.5)],
+                "rotate": 15,
             },
             # Artwork callout — remove sample ink only; keep the charcoal plate.
             {"box": (1268, 890, 455, 221), "cover": (1248, 870, 495, 280), "erase": "ink"},
             # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
-            {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "ink"},
+            {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "flat"},
         ],
         "chip": (1310, 60, 390, 150),
         "header_fields": {
@@ -102,32 +105,8 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
             "project_owner": (1105, 143, 160, 32),
             "print_order": (1105, 190, 160, 32),
         },
-        # Rectangular regions for flat art; photo uses a silhouette polygon so coat stays clean.
-        "recolor_regions": [
-            (580, 1880, 840, 1180),  # line drawing — must cover right side panel (was clipped → black bar)
-        ],
-        "recolor_polys": [
-            # Lifestyle photo — front panel + side (PDF pts). Left/bottom stay clear of coat.
-            [
-                (540, 755),
-                (595, 730),
-                (680, 720),
-                (750, 735),
-                (795, 785),
-                (820, 880),
-                (830, 1000),
-                (825, 1150),
-                (805, 1280),
-                (765, 1350),
-                (680, 1375),
-                (590, 1365),
-                (550, 1310),
-                (535, 1180),
-                (532, 1020),
-                (535, 900),
-                (540, 810),
-            ],
-        ],
+        # Higher lum unused for backpack (mask path); kept for umbrella parity docs.
+        "recolor_masks": True,
         "colors": {
             "logo_swatch": (56, 2068, 90, 48),
             "logo_label": (155, 2065, 300, 54),
@@ -419,12 +398,16 @@ class WorksheetExporter:
             if str(slot.get("erase") or "") not in post:
                 self._erase_slot(page, slot, black)
         if fabric != black:
-            page = self._recolor_fabric(
-                page,
-                fabric,
-                regions=spec.get("recolor_regions"),
-                polygons=spec.get("recolor_polys"),
-            )
+            if family == "backpack" or spec.get("recolor_masks"):
+                page = self.renderer.recolor_backpack_page(page, fabric)
+            else:
+                page = self._recolor_fabric(
+                    page,
+                    fabric,
+                    regions=spec.get("recolor_regions"),
+                    polygons=spec.get("recolor_polys"),
+                    max_lum=float(spec.get("recolor_max_lum") or 95),
+                )
         for slot in spec["logos"]:
             if str(slot.get("erase") or "") in post:
                 self._erase_slot(page, slot, fabric)
@@ -489,9 +472,8 @@ class WorksheetExporter:
         outline_px = max(1, int(round(float(slot.get("outline_pt") or 0) * SCALE))) if outline else 0
         fit_w = max(1, w - outline_px * 2)
         fit_h = max(1, h - outline_px * 2)
-        scale = min(fit_w / art.width, fit_h / art.height)
-        nw, nh = max(1, int(art.width * scale)), max(1, int(art.height * scale))
-        art = art.resize((nw, nh), PILImage.Resampling.LANCZOS)
+        # Uniform scale: min(fit_w/w, fit_h/h) — preserves kerning / glyph aspect.
+        art = fit_logo_uniform(art, fit_w, fit_h)
         if outline:
             art = _outline_mark(
                 art,
@@ -818,6 +800,7 @@ class WorksheetExporter:
         fabric: tuple[int, int, int],
         regions: list[tuple[float, float, float, float]] | None = None,
         polygons: list[list[tuple[float, float]]] | None = None,
+        max_lum: float = 95,
     ) -> PILImage.Image:
         """Shift near-black fabric pixels toward the selected color.
 
@@ -833,7 +816,8 @@ class WorksheetExporter:
         lum = rgb.max(axis=2)
         chroma = rgb.max(axis=2) - rgb.min(axis=2)
         # Include soft canopy shading so light fabrics do not leave charcoal patches.
-        mask = (lum < 95) & (chroma < 36)
+        # Backpack specs raise max_lum so handle/side midtones tint with the body.
+        mask = (lum < max_lum) & (chroma < 42)
         if regions or polygons:
             allowed = np.zeros(mask.shape, dtype=bool)
             for box in regions or []:
@@ -862,8 +846,20 @@ class WorksheetExporter:
         src = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype="int16")
         dst = np.array(fabric, dtype="int16")
         delta = dst - src
+        work = rgb
+        if regions:
+            # Flat-art fills are often pure black (0,0,0), darker than NRF Black.
+            # Lift those inside rectangular regions so handles/mesh match the body.
+            # Photo polygons keep natural shading (no lift).
+            region_only = np.zeros(mask.shape, dtype=bool)
+            for box in regions:
+                x, y, w, h = _pts(box)
+                y1, x1 = min(mask.shape[0], y + h), min(mask.shape[1], x + w)
+                region_only[max(0, y) : y1, max(0, x) : x1] = True
+            lifted = np.maximum(rgb, src)
+            work = np.where(region_only[..., None], lifted, rgb)
         for i in range(3):
-            channel = rgb[:, :, i] + mask * delta[i]
+            channel = work[:, :, i] + mask * delta[i]
             arr[:, :, i] = np.clip(channel, 0, 255).astype("uint8")
         return PILImage.fromarray(arr)
 

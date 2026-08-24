@@ -72,10 +72,8 @@ def _fitz_raster(raw: bytes, filetype: str, *, dpi: int = 300, width_px: int | N
 
 
 def _rasterize_svg(raw: bytes, width_px: int) -> Image.Image:
-    image = _fitz_raster(raw, "svg", width_px=width_px)
-    if image is not None:
-        return image
-
+    # Prefer librsvg when present — it honors embedded/system fonts and kerning.
+    # PyMuPDF is a solid fallback on Streamlit Cloud but may substitute fonts.
     rsvg = _which("rsvg-convert")
     if rsvg:
         with tempfile.TemporaryDirectory() as tmp:
@@ -85,6 +83,10 @@ def _rasterize_svg(raw: bytes, width_px: int) -> Image.Image:
             result = _run([rsvg, "-u", "-w", str(width_px), "-f", "png", "-o", str(dst), str(src)])
             if result.returncode == 0 and dst.exists():
                 return Image.open(dst).convert("RGBA")
+
+    image = _fitz_raster(raw, "svg", width_px=width_px)
+    if image is not None:
+        return image
 
     raise VectorLoadError(
         "Could not rasterize SVG. Install PyMuPDF (pip) or rsvg-convert (librsvg)."
