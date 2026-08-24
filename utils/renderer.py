@@ -14,6 +14,7 @@ from typing import Any
 import cv2
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL.Image import composite as image_composite
 
 from .catalog import fabric_rgb_map, product_specs
 
@@ -905,7 +906,7 @@ def tint_with_alpha_mask(
     fabric_layer = ImageChops.multiply(solid, shade)
     fabric_layer = _match_layer(fabric_layer, size, "RGB")
     try:
-        composited = Image.composite(fabric_layer, roi, mask_roi)
+        composited = image_composite(fabric_layer, roi, mask_roi)
     except ValueError:
         return page_rgba
     page_rgba.paste(composited.convert("RGB"), (x0, y0))

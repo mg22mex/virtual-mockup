@@ -7,24 +7,33 @@ Live proof shows the official production-worksheet pages after stamping.
 from __future__ import annotations
 
 import hashlib
+import traceback
 from datetime import date
 from pathlib import Path
 
 import streamlit as st
 
-from skills.asset_logger import AssetLogger
-from skills.state_memory import StateMemory
-from utils.catalog import (
-    fabric_caption,
-    fabrics_for_styles,
-    logo_color_names,
-    logo_knockout_mode,
-    style_labels,
-)
-from utils.exporter import WorksheetExporter, worksheet_filename
-from utils.project_guide import render_project_guide
-from utils.renderer import JobSpec
-from utils.vectors import SUPPORTED_EXTS, VectorLoadError, load_artwork
+_IMPORT_ERROR: str | None = None
+try:
+    from skills.asset_logger import AssetLogger
+    from skills.state_memory import StateMemory
+    from utils.catalog import (
+        fabric_caption,
+        fabrics_for_styles,
+        logo_color_names,
+        logo_knockout_mode,
+        style_labels,
+    )
+    from utils.exporter import WorksheetExporter, worksheet_filename
+    from utils.project_guide import render_project_guide
+    from utils.renderer import JobSpec
+    from utils.vectors import SUPPORTED_EXTS, VectorLoadError, load_artwork
+except Exception:  # noqa: BLE001 — show Cloud import crashes on-screen
+    _IMPORT_ERROR = traceback.format_exc()
+    AssetLogger = StateMemory = WorksheetExporter = JobSpec = object  # type: ignore[misc,assignment]
+    VectorLoadError = Exception  # type: ignore[misc,assignment]
+    worksheet_filename = fabric_caption = fabrics_for_styles = logo_color_names = logo_knockout_mode = style_labels = render_project_guide = load_artwork = None  # type: ignore[assignment]
+    SUPPORTED_EXTS = {".svg"}
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "output"
@@ -38,7 +47,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 46
+STAMP_VERSION = 47
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -119,6 +128,11 @@ def main() -> None:
         layout="wide",
         initial_sidebar_state="expanded",
     )
+    if _IMPORT_ERROR:
+        print(_IMPORT_ERROR, flush=True)
+        st.error("Failed to import application modules. Traceback is below.")
+        st.code(_IMPORT_ERROR, language="text")
+        return
     if WM_MARK.exists():
         st.logo(str(WM_MARK), size="large")
 
@@ -475,4 +489,13 @@ def main() -> None:
     render_project_guide(stamp_version=STAMP_VERSION)
 
 
-main()
+try:
+    main()
+except Exception:  # noqa: BLE001 — Cloud "Oh no" hides the real traceback
+    _tb = traceback.format_exc()
+    print(_tb, flush=True)
+    try:
+        st.error("The app failed while starting. Traceback is below.")
+        st.code(_tb, language="text")
+    except Exception:
+        pass
