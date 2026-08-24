@@ -13,7 +13,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from .catalog import fabric_rgb_map, product_specs
 
@@ -256,7 +256,7 @@ class MockupRenderer:
         try:
             out = page.convert("RGBA")
             applied = False
-            photo = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size)
+            photo = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
             if photo is not None:
                 out = tint_with_alpha_mask(out, fabric_rgb, photo, mode="photo")
                 applied = True
@@ -807,23 +807,24 @@ def fit_logo_uniform(
     return out
 
 
-def _load_alpha_mask(path: Path, size: tuple[int, int]) -> Image.Image | None:
-    """Load an L-mode alpha mask resized to ``size``, or None if unavailable."""
+def _load_alpha_mask(
+    path: Path,
+    size: tuple[int, int],
+    *,
+    feather: bool = False,
+) -> Image.Image | None:
+    """Load a static 8-bit ``L`` mask, resized to ``size``, or None if unavailable."""
     try:
         if not path.is_file():
             return None
         with Image.open(path) as mask:
-            mask = mask.copy()
-        if mask.mode in {"RGBA", "LA"}:
-            alpha = mask.split()[-1]
-        elif mask.mode == "L":
-            alpha = mask
-        else:
             alpha = mask.convert("L")
         if alpha.size != size:
             if size[0] < 1 or size[1] < 1:
                 return None
             alpha = alpha.resize(size, Image.Resampling.BILINEAR)
+        if feather:
+            alpha = alpha.filter(ImageFilter.GaussianBlur(radius=1))
         return alpha
     except Exception:
         return None
@@ -837,25 +838,6 @@ def _mask_bbox(alpha_u8: np.ndarray, threshold: int = 5) -> tuple[int, int, int,
     return int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
 
 
-def _feather_mask_bottom(alpha_u8: np.ndarray, *, rows: int = 3) -> np.ndarray:
-    """Short vertical ramp on the mask hem to avoid a jagged hard cut."""
-    if rows < 1 or alpha_u8.size == 0:
-        return alpha_u8
-    out = alpha_u8.copy()
-    h, w = out.shape
-    for x in range(w):
-        ys = np.where(out[:, x] > 128)[0]
-        if ys.size < rows + 1:
-            continue
-        y_bot = int(ys.max())
-        for i in range(rows):
-            y = y_bot - i
-            if y < 0:
-                break
-            out[y, x] = np.uint8(max(0, min(255, int(out[y, x]) * (i + 1) // (rows + 1))))
-    return out
-
-
 def tint_with_alpha_mask(
     page: Image.Image,
     fabric_rgb: tuple[int, int, int],
@@ -863,12 +845,13 @@ def tint_with_alpha_mask(
     *,
     mode: str = "photo",
 ) -> Image.Image:
-    """Apply fabric color under a pre-cut alpha channel (multiply + shift blend).
+    """Tint fabric under a static 8-bit mask. No runtime color rejection.
 
-    ``mode="photo"`` preserves lifestyle shading via luminance multiply.
-    ``mode="flat"`` lifts pure-black line-art fills so handles/mesh match the body.
+    ``mode="photo"`` multiplies a solid fabric fill by photo luminance, then
+    ``Image.composite``s it over the original using the PNG mask only.
+    ``mode="flat"`` lifts line-art fills so handles/mesh match the body.
 
-    Only the mask bounding box is processed (full-page float32 blends OOM on Cloud).
+    Only the mask bounding box is processed (full-page blends OOM on Cloud).
     """
     page_rgba = page.convert("RGBA")
     if page_rgba.width < 1 or page_rgba.height < 1:
@@ -879,55 +862,38 @@ def tint_with_alpha_mask(
         alpha_img = alpha_img.resize(page_rgba.size, Image.Resampling.BILINEAR)
 
     alpha_u8 = np.asarray(alpha_img, dtype=np.uint8)
-    if mode == "photo":
-        alpha_u8 = _feather_mask_bottom(alpha_u8, rows=3)
     bbox = _mask_bbox(alpha_u8)
     if bbox is None:
         return page_rgba
     y0, y1, x0, x1 = bbox
-
-    out = np.array(page_rgba, copy=True)
-    if out.ndim != 3 or out.shape[2] < 3:
-        return page_rgba
-    if out.shape[0] != alpha_u8.shape[0] or out.shape[1] != alpha_u8.shape[1]:
-        raise ValueError(
-            f"page/mask size mismatch: page {out.shape[:2]} vs mask {alpha_u8.shape}"
-        )
-
-    rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
-    a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
-    a = np.clip(a, 0.0, 1.0)
-
-    src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
-    dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
+    box = (x0, y0, x1, y1)
 
     if mode == "flat":
-        work = np.maximum(rgb, src_a)
-        tinted = np.clip(work + (dst_a - src_a), 0, 255)
-    else:
-        # Additive NRF→fabric shift only (no luminance multiply). Multiply on olive
-        # coat fringe produced lime/yellow highlights at soft mask edges.
-        r_c = rgb[:, :, 0].astype(np.float32)
-        g_c = rgb[:, :, 1].astype(np.float32)
-        b_c = rgb[:, :, 2].astype(np.float32)
-        lum = rgb.mean(axis=2)
-        chroma = rgb.max(axis=2) - rgb.min(axis=2)
-        g_dom = g_c - np.maximum(r_c, b_c)
-        # Olive/khaki coat and the lighter hem fringe before the coat fabric.
-        reject = (
-            ((g_dom > 1.8) & (lum > 50) & (lum < 200) & (chroma > 8))
-            | ((g_dom > 6) & (lum > 48) & (lum < 190))
-            | ((chroma >= 26) & (g_dom > 4) & (lum > 55))
-            | ((lum > 52) & (g_dom >= 0.5) & (chroma > 9))
-        )
-        a = np.where(reject[..., None], 0.0, a)
-        # Drop low-alpha hem fringe; keep the 3-row bottom feather intact.
-        a = np.where(a < 0.12, 0.0, a)
+        out = np.array(page_rgba, copy=True)
+        if out.ndim != 3 or out.shape[2] < 3:
+            return page_rgba
+        rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
+        a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
+        src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
+        dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
         tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
+        blended = rgb * (1.0 - a) + tinted * a
+        out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
+        return Image.fromarray(out, "RGBA")
 
-    blended = rgb * (1.0 - a) + tinted * a
-    out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
-    return Image.fromarray(out, "RGBA")
+    roi = page_rgba.crop(box).convert("RGB")
+    mask_roi = Image.fromarray(alpha_u8[y0:y1, x0:x1], mode="L")
+    fabric = tuple(int(v) for v in fabric_rgb)
+    solid = Image.new("RGB", roi.size, fabric)
+    gray = ImageOps.grayscale(roi)
+    # Stretch NRF-black (~35) toward mid-gray so multiply reveals Sage/Steel Blue,
+    # while keeping photo folds. No hue/coat tests — the PNG mask is the only clip.
+    lut = [min(255, int(round(i * (185.0 / 35.0)))) for i in range(256)]
+    shade = Image.merge("RGB", (gray.point(lut),) * 3)
+    fabric_layer = ImageChops.multiply(solid, shade)
+    composited = Image.composite(fabric_layer, roi, mask_roi)
+    page_rgba.paste(composited, (x0, y0))
+    return page_rgba
 
 
 def fabric_swatch_names() -> list[str]:
