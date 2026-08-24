@@ -13,7 +13,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 from PIL.Image import composite as image_composite
 
 from .catalog import fabric_rgb_map, product_specs
@@ -858,8 +858,8 @@ def tint_with_alpha_mask(
 ) -> Image.Image:
     """Tint fabric under a static 8-bit mask. No runtime color rejection.
 
-    ``mode="photo"`` multiplies a solid fabric fill by photo luminance, then
-    ``Image.composite``s it over the original using the PNG mask only.
+    ``mode="photo"`` multiplies a solid fabric fill by the source photo RGB,
+    then ``Image.composite``s it over the original using the PNG mask only.
     ``mode="flat"`` lifts line-art fills so handles/mesh match the body.
 
     Only the mask bounding box is processed (full-page blends OOM on Cloud).
@@ -896,14 +896,8 @@ def tint_with_alpha_mask(
     mask_roi = _match_layer(alpha_img.crop(box), size, "L")
     fabric = tuple(int(v) for v in fabric_rgb)
     solid = Image.new("RGB", size, fabric)
-    gray = ImageOps.grayscale(roi)
-    # Stretch NRF-black (~35) toward mid-gray so multiply reveals Sage/Steel Blue,
-    # while keeping photo folds. No hue/coat tests — the PNG mask is the only clip.
-    lut = [min(255, int(round(i * (185.0 / 35.0)))) for i in range(256)]
-    stretched = gray.point(lut)
-    shade = Image.merge("RGB", (stretched.copy(), stretched.copy(), stretched.copy()))
-    shade = _match_layer(shade, size, "RGB")
-    fabric_layer = ImageChops.multiply(solid, shade)
+    # Standard multiply: fabric × photo preserves shadow/highlight structure.
+    fabric_layer = ImageChops.multiply(solid, roi)
     fabric_layer = _match_layer(fabric_layer, size, "RGB")
     try:
         composited = image_composite(fabric_layer, roi, mask_roi)

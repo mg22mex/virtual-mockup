@@ -91,14 +91,14 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "cover": (540, 845, 300, 170),
                 "erase": "photo",
             },
-            # Artwork callout — solid charcoal plate, crisp centered logo.
+            # Artwork callout — uniform charcoal plate, crisp centered logo.
             {
                 "box": (1268, 890, 455, 221),
-                "cover": (1248, 870, 495, 280),
+                "cover": (1268, 890, 455, 221),
                 "erase": "plate",
                 "plate": (48, 48, 50),
                 "crisp": True,
-                "fit_pad": 0.06,
+                "fit_pad": 0.08,
             },
             # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
             {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "flat"},
@@ -402,6 +402,14 @@ class WorksheetExporter:
         for slot in spec["logos"]:
             if str(slot.get("erase") or "") not in post:
                 self._erase_slot(page, slot, black)
+        # Artwork callouts: neutral plate before recolor so lineart tint cannot
+        # stain the preview square with fabric color / nested frame artifacts.
+        for slot in spec["logos"]:
+            if str(slot.get("erase") or "") == "plate":
+                plate = slot.get("plate") or (48, 48, 50)
+                cover = slot.get("cover") or slot.get("box")
+                if cover:
+                    self._fill_cover(page, cover, tuple(int(v) for v in plate))
         if fabric != black:
             if family == "backpack" or spec.get("recolor_masks"):
                 tinted = self.renderer.recolor_backpack_page(page, fabric)
