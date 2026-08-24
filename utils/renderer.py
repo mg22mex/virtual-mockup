@@ -866,11 +866,19 @@ def tint_with_alpha_mask(
         work = np.maximum(rgb, src_a)
         tinted = np.clip(work + (dst_a - src_a), 0, 255)
     else:
-        ref = max(float(np.mean(src_a)), 1.0)
-        lum = np.clip(rgb.mean(axis=2, keepdims=True) / ref, 0.2, 2.8)
-        multiplied = np.clip(dst_a * lum, 0, 255)
-        shifted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
-        tinted = 0.5 * multiplied + 0.5 * shifted
+        # Additive NRF→fabric shift only (no luminance multiply). Multiply on olive
+        # coat fringe produced lime/yellow highlights at soft mask edges.
+        r_c, g_c, b_c = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+        lum = rgb.mean(axis=2)
+        chroma = rgb.max(axis=2) - rgb.min(axis=2)
+        g_dom = g_c - np.maximum(r_c, b_c)
+        reject = ((g_dom > 6) & (lum > 48) & (lum < 190)) | (
+            (chroma >= 26) & (g_dom > 4) & (lum > 55)
+        )
+        a = np.where(reject[..., None], 0.0, a)
+        # Harden remaining soft fringe so coat never gets a translucent blue wash.
+        a = np.where(a < 0.35, 0.0, np.clip((a - 0.35) / 0.65, 0.0, 1.0))
+        tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
 
     blended = rgb * (1.0 - a) + tinted * a
     out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)

@@ -85,13 +85,11 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — uniform scale + slight tilt (no perspective quad;
-            # quads stretch wide wordmarks like Proper and break letter-spacing).
+            # Front-view photo — flat, centered on upper panel (no rotate/quad skew).
             {
-                "box": (560, 885, 256, 72),
-                "cover": (530, 840, 320, 160),
+                "box": (580, 900, 220, 65),
+                "cover": (540, 845, 300, 170),
                 "erase": "photo",
-                "rotate": 15,
             },
             # Artwork callout — remove sample ink only; keep the charcoal plate.
             {"box": (1268, 890, 455, 221), "cover": (1248, 870, 495, 280), "erase": "ink"},
@@ -549,15 +547,15 @@ class WorksheetExporter:
         if not body.any():
             return
         local = float(np.median(lum[body]))
-        pale = body & (lum > local + 18)
-        grow = body & ((lum > local + 10) | (lum < local - 14))
+        pale = body & (lum > local + 14)
+        grow = body & ((lum > local + 8) | (lum < local - 12) | (np.abs(lum - local) > 16))
         seed = pale.astype(np.uint8) * 255
         if int(seed.max()) == 0:
-            seed = (body & (lum < local - 14)).astype(np.uint8) * 255
+            seed = (body & (lum < local - 12)).astype(np.uint8) * 255
         grow_u8 = grow.astype(np.uint8) * 255
         kernel = np.ones((3, 3), np.uint8)
         mask = seed
-        for _ in range(8):
+        for _ in range(14):
             nxt = cv2.bitwise_and(cv2.dilate(mask, kernel, iterations=1), grow_u8)
             nxt = cv2.bitwise_or(nxt, mask)
             if int(cv2.countNonZero(cv2.subtract(nxt, mask))) == 0:
@@ -565,9 +563,9 @@ class WorksheetExporter:
             mask = nxt
         if int(mask.max()) == 0:
             return
-        mask = cv2.dilate(mask, kernel, iterations=2)
+        mask = cv2.dilate(mask, kernel, iterations=3)
         mask[paper] = 0
-        near = cv2.dilate(mask, np.ones((9, 9), np.uint8), iterations=2) > 0
+        near = cv2.dilate(mask, np.ones((11, 11), np.uint8), iterations=2) > 0
         rgb2 = rgb.astype(np.float32)
         for row in range(lum.shape[0]):
             m = mask[row] > 0
@@ -586,7 +584,7 @@ class WorksheetExporter:
             if np.any(m):
                 rgb2[row, m] = fill
             row_lum = rgb2[row].mean(axis=1)
-            extra = body[row] & n & (np.abs(row_lum - float(fill.mean())) > 7)
+            extra = body[row] & n & (np.abs(row_lum - float(fill.mean())) > 6)
             if extra.any():
                 rgb2[row, extra] = fill
         crop[:, :, :3] = np.clip(rgb2, 0, 255).astype(np.uint8)
