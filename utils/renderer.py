@@ -256,11 +256,11 @@ class MockupRenderer:
         try:
             out = page.convert("RGBA")
             applied = False
-            photo = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
-            if photo is not None:
-                out = tint_with_alpha_mask(out, fabric_rgb, photo, mode="photo")
+            photo_mask = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
+            if photo_mask is not None:
+                out = tint_with_alpha_mask(out, fabric_rgb, photo_mask, mode="photo")
                 applied = True
-                del photo
+                del photo_mask
             line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
             if line is not None:
                 out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
@@ -838,6 +838,16 @@ def _mask_bbox(alpha_u8: np.ndarray, threshold: int = 5) -> tuple[int, int, int,
     return int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
 
 
+def _match_layer(image: Image.Image, size: tuple[int, int], mode: str) -> Image.Image:
+    """Force ``image`` to ``size`` and ``mode`` so Image.composite cannot fail."""
+    out = image.convert(mode)
+    if out.size != size:
+        if size[0] < 1 or size[1] < 1:
+            return Image.new(mode, (max(1, size[0]), max(1, size[1])))
+        out = out.resize(size, Image.Resampling.BILINEAR)
+    return out
+
+
 def tint_with_alpha_mask(
     page: Image.Image,
     fabric_rgb: tuple[int, int, int],
@@ -857,11 +867,10 @@ def tint_with_alpha_mask(
     if page_rgba.width < 1 or page_rgba.height < 1:
         return page_rgba
 
-    alpha_img = alpha_mask.convert("L")
-    if alpha_img.size != page_rgba.size:
-        alpha_img = alpha_img.resize(page_rgba.size, Image.Resampling.BILINEAR)
+    photo = page_rgba.convert("RGB")
+    alpha_img = _match_layer(alpha_mask, photo.size, "L")
 
-    alpha_u8 = np.asarray(alpha_img, dtype=np.uint8)
+    alpha_u8 = np.ascontiguousarray(np.asarray(alpha_img, dtype=np.uint8))
     bbox = _mask_bbox(alpha_u8)
     if bbox is None:
         return page_rgba
@@ -881,18 +890,25 @@ def tint_with_alpha_mask(
         out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
         return Image.fromarray(out, "RGBA")
 
-    roi = page_rgba.crop(box).convert("RGB")
-    mask_roi = Image.fromarray(alpha_u8[y0:y1, x0:x1], mode="L")
+    roi = _match_layer(photo.crop(box), (max(1, x1 - x0), max(1, y1 - y0)), "RGB")
+    size = roi.size
+    mask_roi = _match_layer(alpha_img.crop(box), size, "L")
     fabric = tuple(int(v) for v in fabric_rgb)
-    solid = Image.new("RGB", roi.size, fabric)
+    solid = Image.new("RGB", size, fabric)
     gray = ImageOps.grayscale(roi)
     # Stretch NRF-black (~35) toward mid-gray so multiply reveals Sage/Steel Blue,
     # while keeping photo folds. No hue/coat tests — the PNG mask is the only clip.
     lut = [min(255, int(round(i * (185.0 / 35.0)))) for i in range(256)]
-    shade = Image.merge("RGB", (gray.point(lut),) * 3)
+    stretched = gray.point(lut)
+    shade = Image.merge("RGB", (stretched.copy(), stretched.copy(), stretched.copy()))
+    shade = _match_layer(shade, size, "RGB")
     fabric_layer = ImageChops.multiply(solid, shade)
-    composited = Image.composite(fabric_layer, roi, mask_roi)
-    page_rgba.paste(composited, (x0, y0))
+    fabric_layer = _match_layer(fabric_layer, size, "RGB")
+    try:
+        composited = Image.composite(fabric_layer, roi, mask_roi)
+    except ValueError:
+        return page_rgba
+    page_rgba.paste(composited.convert("RGB"), (x0, y0))
     return page_rgba
 
 
