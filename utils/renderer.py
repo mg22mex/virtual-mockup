@@ -837,6 +837,25 @@ def _mask_bbox(alpha_u8: np.ndarray, threshold: int = 5) -> tuple[int, int, int,
     return int(ys.min()), int(ys.max()) + 1, int(xs.min()), int(xs.max()) + 1
 
 
+def _feather_mask_bottom(alpha_u8: np.ndarray, *, rows: int = 3) -> np.ndarray:
+    """Short vertical ramp on the mask hem to avoid a jagged hard cut."""
+    if rows < 1 or alpha_u8.size == 0:
+        return alpha_u8
+    out = alpha_u8.copy()
+    h, w = out.shape
+    for x in range(w):
+        ys = np.where(out[:, x] > 128)[0]
+        if ys.size < rows + 1:
+            continue
+        y_bot = int(ys.max())
+        for i in range(rows):
+            y = y_bot - i
+            if y < 0:
+                break
+            out[y, x] = np.uint8(max(0, min(255, int(out[y, x]) * (i + 1) // (rows + 1))))
+    return out
+
+
 def tint_with_alpha_mask(
     page: Image.Image,
     fabric_rgb: tuple[int, int, int],
@@ -860,6 +879,8 @@ def tint_with_alpha_mask(
         alpha_img = alpha_img.resize(page_rgba.size, Image.Resampling.BILINEAR)
 
     alpha_u8 = np.asarray(alpha_img, dtype=np.uint8)
+    if mode == "photo":
+        alpha_u8 = _feather_mask_bottom(alpha_u8, rows=3)
     bbox = _mask_bbox(alpha_u8)
     if bbox is None:
         return page_rgba
@@ -892,15 +913,16 @@ def tint_with_alpha_mask(
         lum = rgb.mean(axis=2)
         chroma = rgb.max(axis=2) - rgb.min(axis=2)
         g_dom = g_c - np.maximum(r_c, b_c)
-        # Olive/khaki coat (incl. weak g_dom≈2 fringe under the bag hem).
+        # Olive/khaki coat and the lighter hem fringe before the coat fabric.
         reject = (
             ((g_dom > 1.8) & (lum > 50) & (lum < 200) & (chroma > 8))
             | ((g_dom > 6) & (lum > 48) & (lum < 190))
             | ((chroma >= 26) & (g_dom > 4) & (lum > 55))
+            | ((lum > 52) & (g_dom >= 0.5) & (chroma > 9))
         )
         a = np.where(reject[..., None], 0.0, a)
-        # Harden remaining soft fringe so coat never gets a translucent blue wash.
-        a = np.where(a < 0.40, 0.0, np.clip((a - 0.40) / 0.60, 0.0, 1.0))
+        # Drop low-alpha hem fringe; keep the 3-row bottom feather intact.
+        a = np.where(a < 0.12, 0.0, a)
         tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
 
     blended = rgb * (1.0 - a) + tinted * a
