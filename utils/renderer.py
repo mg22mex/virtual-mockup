@@ -7,6 +7,7 @@ Artwork bound (worksheet standard): 21.6 cm wide × 10 cm tall.
 from __future__ import annotations
 
 import math
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -269,7 +270,8 @@ class MockupRenderer:
                 del line
             return out if applied else None
         except Exception:
-            return None
+            print("Renderer Error:", traceback.format_exc(), flush=True)
+            return page
 
     # ----------------------------------------------------------- WM brand mark
     def weatherman_mark(self, size: int, fill: tuple[int, int, int] = WHITE, bg=NAVY) -> Image.Image:
@@ -865,46 +867,47 @@ def tint_with_alpha_mask(
     Only the mask bounding box is processed (full-page blends OOM on Cloud).
     """
     page_rgba = page.convert("RGBA")
-    if page_rgba.width < 1 or page_rgba.height < 1:
-        return page_rgba
-
-    photo = page_rgba.convert("RGB")
-    alpha_img = _match_layer(alpha_mask, photo.size, "L")
-
-    alpha_u8 = np.ascontiguousarray(np.asarray(alpha_img, dtype=np.uint8))
-    bbox = _mask_bbox(alpha_u8)
-    if bbox is None:
-        return page_rgba
-    y0, y1, x0, x1 = bbox
-    box = (x0, y0, x1, y1)
-
-    if mode == "flat":
-        out = np.array(page_rgba, copy=True)
-        if out.ndim != 3 or out.shape[2] < 3:
-            return page_rgba
-        rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
-        a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
-        src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
-        dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
-        tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
-        blended = rgb * (1.0 - a) + tinted * a
-        out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
-        return Image.fromarray(out, "RGBA")
-
-    roi = _match_layer(photo.crop(box), (max(1, x1 - x0), max(1, y1 - y0)), "RGB")
-    size = roi.size
-    mask_roi = _match_layer(alpha_img.crop(box), size, "L")
-    fabric = tuple(int(v) for v in fabric_rgb)
-    solid = Image.new("RGB", size, fabric)
-    # Standard multiply: fabric × photo preserves shadow/highlight structure.
-    fabric_layer = ImageChops.multiply(solid, roi)
-    fabric_layer = _match_layer(fabric_layer, size, "RGB")
     try:
+        if page_rgba.width < 1 or page_rgba.height < 1:
+            return page_rgba
+
+        photo = page_rgba.convert("RGB")
+        alpha_img = _match_layer(alpha_mask, photo.size, "L")
+
+        alpha_u8 = np.ascontiguousarray(np.asarray(alpha_img, dtype=np.uint8))
+        bbox = _mask_bbox(alpha_u8)
+        if bbox is None:
+            return page_rgba
+        y0, y1, x0, x1 = bbox
+        box = (x0, y0, x1, y1)
+
+        if mode == "flat":
+            out = np.array(page_rgba, copy=True)
+            if out.ndim != 3 or out.shape[2] < 3:
+                return page_rgba
+            rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
+            a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
+            src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
+            dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
+            tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
+            blended = rgb * (1.0 - a) + tinted * a
+            out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
+            return Image.fromarray(out, "RGBA")
+
+        roi = _match_layer(photo.crop(box), (max(1, x1 - x0), max(1, y1 - y0)), "RGB")
+        size = roi.size
+        mask_roi = _match_layer(alpha_img.crop(box), size, "L")
+        fabric = tuple(int(v) for v in fabric_rgb)
+        solid = Image.new("RGB", size, fabric)
+        # Standard multiply: fabric × photo preserves shadow/highlight structure.
+        fabric_layer = ImageChops.multiply(solid, roi)
+        fabric_layer = _match_layer(fabric_layer, size, "RGB")
         composited = image_composite(fabric_layer, roi, mask_roi)
-    except ValueError:
+        page_rgba.paste(composited.convert("RGB"), (x0, y0))
         return page_rgba
-    page_rgba.paste(composited.convert("RGB"), (x0, y0))
-    return page_rgba
+    except Exception:
+        print("Renderer Error:", traceback.format_exc(), flush=True)
+        return page_rgba
 
 
 def fabric_swatch_names() -> list[str]:

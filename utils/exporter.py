@@ -7,6 +7,7 @@ header fields. Layout, photography, callouts, and pagination stay untouched.
 
 from __future__ import annotations
 
+import traceback
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -352,16 +353,19 @@ class WorksheetExporter:
         """Official stamped pages, scaled for the on-screen proof."""
         previews: list[tuple[str, bytes]] = []
         for _page_no, title, page in self.iter_job_pages(job, logo):
-            rgb = page.convert("RGB")
-            if rgb.width > max_width:
-                ratio = max_width / rgb.width
-                rgb = rgb.resize(
-                    (max_width, max(1, int(rgb.height * ratio))),
-                    PILImage.Resampling.LANCZOS,
-                )
-            buf = BytesIO()
-            rgb.save(buf, format="JPEG", quality=quality, optimize=True)
-            previews.append((title, buf.getvalue()))
+            try:
+                rgb = page.convert("RGB")
+                if rgb.width > max_width:
+                    ratio = max_width / rgb.width
+                    rgb = rgb.resize(
+                        (max_width, max(1, int(rgb.height * ratio))),
+                        PILImage.Resampling.LANCZOS,
+                    )
+                buf = BytesIO()
+                rgb.save(buf, format="JPEG", quality=quality, optimize=True)
+                previews.append((title, buf.getvalue()))
+            except Exception:
+                print("Exporter Error:", traceback.format_exc(), flush=True)
         return previews
 
     def build_pdf(self, job: JobSpec, logo: PILImage.Image | None) -> bytes:
@@ -392,54 +396,59 @@ class WorksheetExporter:
         family: str = "umbrella",
     ) -> PILImage.Image:
         page = self._template(page_no, family)
-        spec = self._page_spec(family, page_no)
-        fabric = job.fabric_rgb
-        black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
-        # Photo/sleeve heals sample already-tinted fabric. Running them before
-        # recolor left a gray plate (skipped by the lum<95 shift) and leftover
-        # bevels that read as a ghost under the new mark.
-        post = {"photo", "sleeve", "plate"}
-        for slot in spec["logos"]:
-            if str(slot.get("erase") or "") not in post:
-                self._erase_slot(page, slot, black)
-        # Artwork callouts: neutral plate before recolor so lineart tint cannot
-        # stain the preview square with fabric color / nested frame artifacts.
-        for slot in spec["logos"]:
-            if str(slot.get("erase") or "") == "plate":
-                plate = slot.get("plate") or (48, 48, 50)
-                cover = slot.get("cover") or slot.get("box")
-                if cover:
-                    self._fill_cover(page, cover, tuple(int(v) for v in plate))
-        if fabric != black:
-            if family == "backpack" or spec.get("recolor_masks"):
-                tinted = self.renderer.recolor_backpack_page(page, fabric)
-                if tinted is not None:
-                    page = tinted
+        base = page.copy()
+        try:
+            spec = self._page_spec(family, page_no)
+            fabric = job.fabric_rgb
+            black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
+            # Photo/sleeve heals sample already-tinted fabric. Running them before
+            # recolor left a gray plate (skipped by the lum<95 shift) and leftover
+            # bevels that read as a ghost under the new mark.
+            post = {"photo", "sleeve", "plate"}
+            for slot in spec["logos"]:
+                if str(slot.get("erase") or "") not in post:
+                    self._erase_slot(page, slot, black)
+            # Artwork callouts: neutral plate before recolor so lineart tint cannot
+            # stain the preview square with fabric color / nested frame artifacts.
+            for slot in spec["logos"]:
+                if str(slot.get("erase") or "") == "plate":
+                    plate = slot.get("plate") or (48, 48, 50)
+                    cover = slot.get("cover") or slot.get("box")
+                    if cover:
+                        self._fill_cover(page, cover, tuple(int(v) for v in plate))
+            if fabric != black:
+                if family == "backpack" or spec.get("recolor_masks"):
+                    tinted = self.renderer.recolor_backpack_page(page, fabric)
+                    if tinted is not None:
+                        page = tinted
+                    else:
+                        # Masks missing/unreadable → rectangular fallback (no crash).
+                        page = self._recolor_fabric(
+                            page,
+                            fabric,
+                            regions=[(555, 1830, 890, 1280)],
+                            max_lum=125,
+                        )
                 else:
-                    # Masks missing/unreadable → rectangular fallback (no crash).
                     page = self._recolor_fabric(
                         page,
                         fabric,
-                        regions=[(555, 1830, 890, 1280)],
-                        max_lum=125,
+                        regions=spec.get("recolor_regions"),
+                        polygons=spec.get("recolor_polys"),
+                        max_lum=float(spec.get("recolor_max_lum") or 95),
                     )
-            else:
-                page = self._recolor_fabric(
-                    page,
-                    fabric,
-                    regions=spec.get("recolor_regions"),
-                    polygons=spec.get("recolor_polys"),
-                    max_lum=float(spec.get("recolor_max_lum") or 95),
-                )
-        for slot in spec["logos"]:
-            if str(slot.get("erase") or "") in post:
-                self._erase_slot(page, slot, fabric)
-        if mark is not None:
             for slot in spec["logos"]:
-                self._stamp_logo(page, slot, mark, fabric, erase=False)
-        self._stamp_colors(page, spec, job)
-        self._stamp_header(page, spec, job)
-        return page
+                if str(slot.get("erase") or "") in post:
+                    self._erase_slot(page, slot, fabric)
+            if mark is not None:
+                for slot in spec["logos"]:
+                    self._stamp_logo(page, slot, mark, fabric, erase=False)
+            self._stamp_colors(page, spec, job)
+            self._stamp_header(page, spec, job)
+            return page
+        except Exception:
+            print("Exporter Error:", traceback.format_exc(), flush=True)
+            return base
 
     def _erase_slot(
         self,
