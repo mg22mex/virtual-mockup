@@ -92,12 +92,12 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "cover": (540, 845, 300, 170),
                 "erase": "photo",
             },
-            # Artwork callout — uniform charcoal plate, crisp centered logo.
+            # Artwork callout — logo on solid fabric fill over the full plate
+            # (no charcoal nested box; cover matches the official Artwork square).
             {
                 "box": (1268, 890, 455, 221),
-                "cover": (1268, 890, 455, 221),
-                "erase": "plate",
-                "plate": (48, 48, 50),
+                "cover": (1200, 800, 600, 400),
+                "erase": "block",
                 "crisp": True,
                 "fit_pad": 0.08,
             },
@@ -404,18 +404,22 @@ class WorksheetExporter:
             # Photo/sleeve heals sample already-tinted fabric. Running them before
             # recolor left a gray plate (skipped by the lum<95 shift) and leftover
             # bevels that read as a ghost under the new mark.
-            post = {"photo", "sleeve", "plate"}
+            post = {"photo", "sleeve", "plate", "block"}
             for slot in spec["logos"]:
                 if str(slot.get("erase") or "") not in post:
                     self._erase_slot(page, slot, black)
-            # Artwork callouts: neutral plate before recolor so lineart tint cannot
-            # stain the preview square with fabric color / nested frame artifacts.
+            # Artwork callouts: solid fabric (or plate) before recolor so lineart
+            # tint cannot stain the preview square with nested frame artifacts.
             for slot in spec["logos"]:
-                if str(slot.get("erase") or "") == "plate":
+                erase = str(slot.get("erase") or "")
+                cover = slot.get("cover") or slot.get("box")
+                if not cover:
+                    continue
+                if erase == "plate":
                     plate = slot.get("plate") or (48, 48, 50)
-                    cover = slot.get("cover") or slot.get("box")
-                    if cover:
-                        self._fill_cover(page, cover, tuple(int(v) for v in plate))
+                    self._fill_cover(page, cover, tuple(int(v) for v in plate))
+                elif erase == "block":
+                    self._fill_cover(page, cover, fabric)
             if fabric != black:
                 if family == "backpack" or spec.get("recolor_masks"):
                     tinted = self.renderer.recolor_backpack_page(page, fabric)

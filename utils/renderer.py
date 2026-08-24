@@ -14,7 +14,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 from PIL.Image import composite as image_composite
 
 from .catalog import fabric_rgb_map, product_specs
@@ -860,8 +860,9 @@ def tint_with_alpha_mask(
 ) -> Image.Image:
     """Tint fabric under a static 8-bit mask. No runtime color rejection.
 
-    ``mode="photo"`` multiplies a solid fabric fill by the source photo RGB,
-    then ``Image.composite``s it over the original using the PNG mask only.
+    ``mode="photo"`` multiplies solid fabric by a luminance shade of the photo
+    (median-anchored, gamma-crushed, darkness-mapped), then composites with the
+    PNG mask — deep folds and zipper texture stay intact instead of a flat fog.
     ``mode="flat"`` lifts line-art fills so handles/mesh match the body.
 
     Only the mask bounding box is processed (full-page blends OOM on Cloud).
@@ -898,16 +899,52 @@ def tint_with_alpha_mask(
         size = roi.size
         mask_roi = _match_layer(alpha_img.crop(box), size, "L")
         fabric = tuple(int(v) for v in fabric_rgb)
-        solid = Image.new("RGB", size, fabric)
-        # Standard multiply: fabric × photo preserves shadow/highlight structure.
-        fabric_layer = ImageChops.multiply(solid, roi)
-        fabric_layer = _match_layer(fabric_layer, size, "RGB")
+        # Luminance → fabric hue (not flat RGB multiply fog).
+        fabric_layer = _match_layer(_photo_fabric_tint(roi, mask_roi, fabric), size, "RGB")
         composited = image_composite(fabric_layer, roi, mask_roi)
         page_rgba.paste(composited.convert("RGB"), (x0, y0))
         return page_rgba
     except Exception:
         print("Renderer Error:", traceback.format_exc(), flush=True)
         return page_rgba
+
+
+def _photo_fabric_tint(
+    roi: Image.Image,
+    mask_roi: Image.Image,
+    fabric: tuple[int, int, int],
+) -> Image.Image:
+    """Tint ROI with fabric via luminance multiply (preserves photo structure).
+
+    ``fabric × shade`` where shade is photo grayscale, median-anchored so NRF-black
+    bags show hue, then gamma-crushed and multiplied again by a darkness map so
+    zipper folds stay near-black instead of a flat fog wash.
+    """
+    gray = ImageOps.grayscale(roi)
+    gray_u8 = np.asarray(gray, dtype=np.float32)
+    mask_u8 = np.asarray(mask_roi, dtype=np.uint8)
+    useful = mask_u8 > 20
+    if not np.any(useful):
+        return Image.new("RGB", roi.size, fabric)
+
+    med = float(np.median(gray_u8[useful]))
+    # Anchor midtones so multiply reveals fabric; cap so highlights don't neon.
+    ref = 130.0
+    scale = min(3.6, ref / max(med, 1.0))
+    shade = np.clip(gray_u8 * scale, 0.0, 255.0)
+    shade = 255.0 * np.power(shade / 255.0, 1.55)
+    # High-frequency residual restores zipper / weave after the stretch.
+    blur = cv2.GaussianBlur(gray_u8, (0, 0), 1.0)
+    shade = np.clip(shade + (gray_u8 - blur) * 1.0, 0.0, 255.0)
+
+    solid = np.array(fabric, dtype=np.float32)
+    out = solid[None, None, :] * (shade[..., None] / 255.0)
+    # Darkness map from original photo: crush pixels below the fabric median
+    # back toward black so folds/hardware keep depth.
+    darkness = np.clip(gray_u8 / max(med, 1.0), 0.0, 1.0)
+    darkness = np.power(darkness, 1.25)
+    out = out * (0.18 + 0.82 * darkness[..., None])
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGB")
 
 
 def fabric_swatch_names() -> list[str]:
