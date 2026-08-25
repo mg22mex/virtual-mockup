@@ -47,7 +47,7 @@ PANEL_OPTIONS = [
 ]
 
 
-STAMP_VERSION = 50
+STAMP_VERSION = 51
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]

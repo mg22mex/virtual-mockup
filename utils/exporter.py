@@ -19,10 +19,13 @@ from reportlab.pdfgen import canvas
 
 from .catalog import fabric_sheet_lines, logo_color_rgb, style_family
 from .renderer import (
+    BACKPACK_FRONT_SAGE,
+    BACKPACK_FRONT_STEEL,
     FABRIC_COLORS,
     NAVY,
     JobSpec,
     MockupRenderer,
+    _backpack_front_variant_path,
     fit_logo_uniform,
 )
 
@@ -443,7 +446,11 @@ class WorksheetExporter:
                     self._fill_cover(page, cover, fabric)
             if fabric != black:
                 if family == "backpack" or spec.get("recolor_masks"):
-                    tinted = self.renderer.recolor_backpack_page(page, fabric)
+                    tinted = self.renderer.recolor_backpack_page(
+                        page,
+                        fabric,
+                        fabric_name=job.fabric_name,
+                    )
                     if tinted is not None:
                         page = tinted
                     else:
@@ -462,9 +469,21 @@ class WorksheetExporter:
                         polygons=spec.get("recolor_polys"),
                         max_lum=float(spec.get("recolor_max_lum") or 95),
                     )
+            # Native Sage/Steel photos have no baked M13 mark — skip photo inpaint
+            # so lifestyle highlights are not mistaken for pale ink.
+            native_path = (
+                _backpack_front_variant_path(job.fabric_name, fabric)
+                if family == "backpack"
+                else None
+            )
+            skip_photo_erase = native_path in {BACKPACK_FRONT_SAGE, BACKPACK_FRONT_STEEL}
             for slot in spec["logos"]:
-                if str(slot.get("erase") or "") in post:
-                    self._erase_slot(page, slot, fabric)
+                erase = str(slot.get("erase") or "")
+                if erase not in post:
+                    continue
+                if skip_photo_erase and erase == "photo":
+                    continue
+                self._erase_slot(page, slot, fabric)
             if mark is not None:
                 for slot in spec["logos"]:
                     self._stamp_logo(page, slot, mark, fabric, erase=False)

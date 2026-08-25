@@ -14,7 +14,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 from PIL.Image import composite as image_composite
 
 from .catalog import fabric_rgb_map, product_specs
@@ -24,6 +24,12 @@ TEMPLATE_DIR = ROOT / "assets" / "templates"
 BACKPACK_DIR = TEMPLATE_DIR / "official" / "backpack"
 BACKPACK_PHOTO_MASK = BACKPACK_DIR / "backpack_mask.png"
 BACKPACK_LINEART_MASK = BACKPACK_DIR / "backpack_lineart_mask.png"
+# Native on-model front photos (Shopify CDN) — skip runtime fabric tint when present.
+BACKPACK_FRONT_BASE = BACKPACK_DIR / "backpack_front_base.png"
+BACKPACK_FRONT_SAGE = BACKPACK_DIR / "backpack_front_sage.png"
+BACKPACK_FRONT_STEEL = BACKPACK_DIR / "backpack_front_steelblue.png"
+# Worksheet Front View photo frame on page-1.png (pixels @ 144 DPI).
+BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
 
 NAVY = (38, 45, 101)
 HEADER_BG = (246, 245, 243)
@@ -243,32 +249,38 @@ class MockupRenderer:
         self,
         page: Image.Image,
         fabric_rgb: tuple[int, int, int],
+        fabric_name: str | None = None,
     ) -> Image.Image | None:
-        """Tint Venture Dry Pack photo + line-art via pre-cut alpha masks.
+        """Apply Venture Dry Pack colorway to the worksheet page.
 
-        Uses ``backpack_mask.png`` / ``backpack_lineart_mask.png`` so the coat,
-        wall, and worksheet paper stay untouched — no runtime polygon fills.
+        Sage / Steel Blue use native on-model photos (no photo tint). Other
+        colors fall back to mask multiply. Line-art fills still shift for all
+        non-black colorways.
 
-        Returns ``None`` if masks are missing or tinting fails so the caller can
-        fall back without crashing the Streamlit session.
+        Returns ``None`` if nothing could be applied so the caller can fall back.
         """
         black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
-        if fabric_rgb == black:
-            return page
         try:
             out = page.convert("RGBA")
             applied = False
-            photo_mask = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
-            if photo_mask is not None:
-                out = tint_with_alpha_mask(out, fabric_rgb, photo_mask, mode="photo")
+            variant = _backpack_front_variant_path(fabric_name, fabric_rgb)
+            if variant is not None and variant.is_file():
+                # Native SKU photo — bypass multiply / mask tint for the front view.
+                out = _paste_backpack_front_photo(out, variant)
                 applied = True
-                del photo_mask
-            line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
-            if line is not None:
-                out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
-                applied = True
-                del line
-            return out if applied else None
+            elif fabric_rgb != black:
+                photo_mask = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
+                if photo_mask is not None:
+                    out = tint_with_alpha_mask(out, fabric_rgb, photo_mask, mode="photo")
+                    applied = True
+                    del photo_mask
+            if fabric_rgb != black:
+                line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
+                if line is not None:
+                    out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
+                    applied = True
+                    del line
+            return out if applied else (page if fabric_rgb == black else None)
         except Exception:
             print("Renderer Error:", traceback.format_exc(), flush=True)
             return page
@@ -848,6 +860,60 @@ def _match_layer(image: Image.Image, size: tuple[int, int], mode: str) -> Image.
         if size[0] < 1 or size[1] < 1:
             return Image.new(mode, (max(1, size[0]), max(1, size[1])))
         out = out.resize(size, Image.Resampling.BILINEAR)
+    return out
+
+
+def _normalize_fabric_key(name: str | None) -> str:
+    """Lowercase token used to match catalog names like ``Sage`` / ``Steel Blue``."""
+    return " ".join(str(name or "").lower().replace("—", " ").replace("-", " ").split())
+
+
+def _backpack_front_variant_path(
+    fabric_name: str | None,
+    fabric_rgb: tuple[int, int, int],
+) -> Path | None:
+    """Return the native front photo for Sage / Steel Blue / Black when available."""
+    key = _normalize_fabric_key(fabric_name)
+    if "steel" in key and "blue" in key:
+        return BACKPACK_FRONT_STEEL if BACKPACK_FRONT_STEEL.is_file() else None
+    if key.startswith("sage") or key == "sage":
+        return BACKPACK_FRONT_SAGE if BACKPACK_FRONT_SAGE.is_file() else None
+    # RGB fallback when UI caption differs from catalog key.
+    if fabric_rgb == FABRIC_COLORS.get("Steel Blue"):
+        return BACKPACK_FRONT_STEEL if BACKPACK_FRONT_STEEL.is_file() else None
+    if fabric_rgb == FABRIC_COLORS.get("Sage"):
+        return BACKPACK_FRONT_SAGE if BACKPACK_FRONT_SAGE.is_file() else None
+    if fabric_rgb == FABRIC_COLORS.get("Black (NRF 001)") or "black" in key:
+        return BACKPACK_FRONT_BASE if BACKPACK_FRONT_BASE.is_file() else None
+    return None
+
+
+def _paste_backpack_front_photo(page: Image.Image, photo_path: Path) -> Image.Image:
+    """Cover the Front View frame with a native product photo (no tint)."""
+    out = page.convert("RGBA")
+    x, y, w, h = BACKPACK_FRONT_BOX
+    if w < 8 or h < 8:
+        return out
+    # Lifestyle shots are framed differently — bias crop so the bag face
+    # lands under the worksheet logo stamp coordinates.
+    if photo_path.resolve() == BACKPACK_FRONT_SAGE.resolve():
+        centering = (0.62, 0.52)
+    elif photo_path.resolve() == BACKPACK_FRONT_STEEL.resolve():
+        centering = (0.48, 0.50)
+    else:
+        centering = (0.50, 0.45)
+    try:
+        with Image.open(photo_path) as src:
+            fitted = ImageOps.fit(
+                src.convert("RGB"),
+                (w, h),
+                method=Image.Resampling.LANCZOS,
+                centering=centering,
+            )
+    except Exception:
+        print("Renderer Error:", traceback.format_exc(), flush=True)
+        return out
+    out.paste(fitted, (x, y))
     return out
 
 
