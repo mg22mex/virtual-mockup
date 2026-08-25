@@ -5,7 +5,7 @@ logo onto the official production-worksheet pages and exports a multi-page PDF
 proof that mirrors Weatherman production sheets (front, sizing, sleeve, and
 related views).
 
-**Live app:** [virtual-mockup on Streamlit Cloud](https://virtual-mockup-fe3z8kxueqz7xjjb8vvcnt.streamlit.app/)  
+**Live app:** [virtual-mockup on Streamlit Cloud](https://virtual-mockup-85kxgyfvpa82a669bqjuqg.streamlit.app/)  
 **Repo:** [mg22mex/virtual-mockup](https://github.com/mg22mex/virtual-mockup)
 
 ---

@@ -92,11 +92,11 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "cover": (540, 845, 300, 170),
                 "erase": "photo",
             },
-            # Artwork callout — logo on solid fabric fill over the full plate
-            # (no charcoal nested box; cover matches the official Artwork square).
+            # Artwork callout — logo on solid fabric over the full Artwork plate
+            # (transparent mark only; no charcoal nested box).
             {
                 "box": (1268, 890, 455, 221),
-                "cover": (1200, 800, 600, 400),
+                "cover": (1189, 750, 614, 500),
                 "erase": "block",
                 "crisp": True,
                 "fit_pad": 0.08,
@@ -216,6 +216,27 @@ def _pts(box: tuple[float, ...]) -> tuple[int, ...]:
 def _trim_mark(mark: PILImage.Image) -> PILImage.Image:
     bbox = mark.getchannel("A").getbbox()
     return mark.crop(bbox) if bbox else mark
+
+
+def _strip_mark_backdrop(mark: PILImage.Image) -> PILImage.Image:
+    """Drop a solid dark plate behind the mark; keep glyph ink (light or dark)."""
+    import numpy as np
+
+    arr = np.array(mark.convert("RGBA"))
+    rgb = arr[:, :, :3].astype(np.float32)
+    alpha = arr[:, :, 3]
+    lum = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
+    opaque = alpha > 200
+    if not opaque.any():
+        return mark
+    dark_plate = opaque & (lum < 80)
+    # Only strip when a large filled plate is present (not black glyph strokes).
+    if float(dark_plate.mean()) > 0.18 and float(dark_plate.sum()) > 400:
+        arr[dark_plate, 3] = 0
+        out = PILImage.fromarray(arr, "RGBA")
+        bbox = out.getchannel("A").getbbox()
+        return out.crop(bbox) if bbox else out
+    return mark
 
 
 def _recolor_ink(mark: PILImage.Image, rgb: tuple[int, int, int]) -> PILImage.Image:
@@ -495,11 +516,21 @@ class WorksheetExporter:
             self._erase_slot(page, slot, fabric)
         if slot.get("stamp") is False or "box" not in slot:
             return
-        _ = fabric
+        # Artwork callouts: always paint a clean fabric plate under the mark so
+        # no charcoal / nested box from the template or lineart tint remains.
+        if str(slot.get("erase") or "") in {"block", "plate"}:
+            cover = slot.get("cover") or slot.get("box")
+            if cover:
+                fill = fabric
+                if str(slot.get("erase") or "") == "plate":
+                    fill = tuple(int(v) for v in (slot.get("plate") or fabric))
+                self._fill_cover(page, cover, fill)
 
         x, y, w, h = _pts(slot["box"])
         rotate = int(slot.get("rotate") or 0)
         art = _trim_mark(mark.convert("RGBA"))
+        # Force fully transparent backdrop — keep ink only (no dark plate in SVG).
+        art = _strip_mark_backdrop(art)
         ink = slot.get("ink")
         if ink:
             art = _recolor_ink(art, tuple(int(v) for v in ink))
