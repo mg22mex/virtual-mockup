@@ -30,6 +30,8 @@ BACKPACK_FRONT_SAGE = BACKPACK_DIR / "backpack_front_sage.png"
 BACKPACK_FRONT_STEEL = BACKPACK_DIR / "backpack_front_steelblue.png"
 # Worksheet Front View photo frame on page-1.png (pixels @ 144 DPI).
 BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
+# Artwork callout plate — keep lineart tint out of this square.
+BACKPACK_ARTWORK_BOX = (2378, 1500, 1228, 1000)  # x, y, w, h (cover @ 144 DPI)
 
 NAVY = (38, 45, 101)
 HEADER_BG = (246, 245, 243)
@@ -253,9 +255,10 @@ class MockupRenderer:
     ) -> Image.Image | None:
         """Apply Venture Dry Pack colorway to the worksheet page.
 
-        Sage / Steel Blue use native on-model photos (no photo tint). Other
-        colors fall back to mask multiply. Line-art fills still shift for all
-        non-black colorways.
+        Sage / Steel Blue paste native on-model photos with **no** front-view
+        multiply/composite tint. Line-art schematic fills still shift color, but
+        the front photo frame and Artwork callout are punched out of that mask
+        so the model/background never pick up a fabric wash.
 
         Returns ``None`` if nothing could be applied so the caller can fall back.
         """
@@ -264,8 +267,21 @@ class MockupRenderer:
             out = page.convert("RGBA")
             applied = False
             variant = _backpack_front_variant_path(fabric_name, fabric_rgb)
-            if variant is not None and variant.is_file():
-                # Native SKU photo — bypass multiply / mask tint for the front view.
+            native_front = variant is not None and variant.is_file()
+
+            # Line-art first (schematic only). Punch front photo + artwork so
+            # flat tint cannot wash the lifestyle plate or callout.
+            if fabric_rgb != black:
+                line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
+                if line is not None:
+                    line = _punch_mask_rect(line, BACKPACK_FRONT_BOX)
+                    line = _punch_mask_rect(line, BACKPACK_ARTWORK_BOX)
+                    out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
+                    applied = True
+                    del line
+
+            if native_front:
+                # Raw SKU photo last — never multiply / composite over it.
                 out = _paste_backpack_front_photo(out, variant)
                 applied = True
             elif fabric_rgb != black:
@@ -274,12 +290,7 @@ class MockupRenderer:
                     out = tint_with_alpha_mask(out, fabric_rgb, photo_mask, mode="photo")
                     applied = True
                     del photo_mask
-            if fabric_rgb != black:
-                line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
-                if line is not None:
-                    out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
-                    applied = True
-                    del line
+
             return out if applied else (page if fabric_rgb == black else None)
         except Exception:
             print("Renderer Error:", traceback.format_exc(), flush=True)
@@ -863,6 +874,23 @@ def _match_layer(image: Image.Image, size: tuple[int, int], mode: str) -> Image.
     return out
 
 
+def _punch_mask_rect(mask: Image.Image, box: tuple[int, int, int, int]) -> Image.Image:
+    """Zero a rectangular region in an L-mode mask (no tint / no spill)."""
+    out = mask.convert("L")
+    x, y, w, h = box
+    if w < 1 or h < 1:
+        return out
+    x0 = max(0, int(x))
+    y0 = max(0, int(y))
+    x1 = min(out.width, x0 + int(w))
+    y1 = min(out.height, y0 + int(h))
+    if x1 <= x0 or y1 <= y0:
+        return out
+    arr = np.array(out)
+    arr[y0:y1, x0:x1] = 0
+    return Image.fromarray(arr, "L")
+
+
 def _normalize_fabric_key(name: str | None) -> str:
     """Lowercase token used to match catalog names like ``Sage`` / ``Steel Blue``."""
     return " ".join(str(name or "").lower().replace("—", " ").replace("-", " ").split())
@@ -894,10 +922,9 @@ def _paste_backpack_front_photo(page: Image.Image, photo_path: Path) -> Image.Im
     x, y, w, h = BACKPACK_FRONT_BOX
     if w < 8 or h < 8:
         return out
-    # Lifestyle shots are framed differently — bias crop so the bag face
-    # lands under the worksheet logo stamp coordinates.
+    # Rear-facing lifestyle shots — center bag panel under logo stamp.
     if photo_path.resolve() == BACKPACK_FRONT_SAGE.resolve():
-        centering = (0.62, 0.52)
+        centering = (0.50, 0.48)
     elif photo_path.resolve() == BACKPACK_FRONT_STEEL.resolve():
         centering = (0.48, 0.50)
     else:

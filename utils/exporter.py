@@ -89,20 +89,19 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — flat, centered on upper panel (no rotate/quad skew).
+            # Front-view photo — upper-center of bag panel on native lifestyle shots.
             {
-                "box": (580, 900, 220, 65),
-                "cover": (540, 845, 300, 170),
+                "box": (600, 920, 280, 78),
+                "cover": (560, 860, 360, 200),
                 "erase": "photo",
             },
-            # Artwork callout — logo on solid fabric over the full Artwork plate
-            # (transparent mark only; no charcoal nested box).
+            # Artwork callout — logo on solid fabric only (no nested plate).
             {
                 "box": (1268, 890, 455, 221),
                 "cover": (1189, 750, 614, 500),
                 "erase": "block",
                 "crisp": True,
-                "fit_pad": 0.08,
+                "fit_pad": 0.10,
             },
             # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
             {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "flat"},
