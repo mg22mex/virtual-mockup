@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 56
+STAMP_VERSION = 57
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -350,18 +350,11 @@ def _run_app() -> None:
     )
 
     logo = None
-    logo_bytes = None
-    logo_name = None
     if upload is not None:
-        logo_bytes = upload.getvalue()
-        logo_name = upload.name
-        st.session_state["logo_bytes"] = logo_bytes
-        st.session_state["logo_name"] = logo_name
-    else:
-        # Do not preload a saved Proper (or any) logo — wait for an explicit upload.
-        st.session_state.pop("logo_bytes", None)
-        st.session_state.pop("logo_name", None)
-        st.session_state.pop("_saved_logo", None)
+        st.session_state["logo_bytes"] = upload.getvalue()
+        st.session_state["logo_name"] = upload.name
+    logo_bytes = st.session_state.get("logo_bytes")
+    logo_name = st.session_state.get("logo_name")
 
     if logo_bytes and logo_name:
         try:
