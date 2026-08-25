@@ -271,8 +271,14 @@ class MockupRenderer:
             applied = False
             native_front = _uses_native_front(fabric_name, fabric_rgb)
 
-            # Line-art first (schematic only). Punch front photo + artwork so
-            # flat tint cannot wash the lifestyle plate or callout.
+            # Sage / Steel: clean SKU photo only — no multiply, composite, or alpha masks.
+            # Client logo is stamped later by the exporter on top of this plate.
+            if native_front:
+                photo = get_base_mockup_image(fabric_name or "")
+                out = _paste_backpack_front_photo(out, photo, color_hint=fabric_name)
+                return out
+
+            # Non-native colorways: line-art flat tint + optional photo-mask multiply.
             if fabric_rgb != black:
                 line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
                 if line is not None:
@@ -281,13 +287,6 @@ class MockupRenderer:
                     out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
                     applied = True
                     del line
-
-            if native_front:
-                # Raw local SKU photo last — no multiply / composite / alpha filters.
-                photo = get_base_mockup_image(fabric_name or "")
-                out = _paste_backpack_front_photo(out, photo, color_hint=fabric_name)
-                applied = True
-            elif fabric_rgb != black:
                 photo_mask = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
                 if photo_mask is not None:
                     out = tint_with_alpha_mask(out, fabric_rgb, photo_mask, mode="photo")
@@ -921,35 +920,33 @@ def _open_local_rgb(path: Path) -> Image.Image:
 def get_base_mockup_image(selected_color: str) -> Image.Image:
     """Load the native backpack front photo for a colorway (case-insensitive).
 
-    Prefers JPEG sidecars when present (lower Cloud RAM). Falls back to
-    ``backpack_front_base.png``. Never uses Streamlit / HTTP — print only.
+    Prefers JPEG sidecars when present (lower Cloud RAM), then PNG, then base.
+    Never raises — falls back to a solid placeholder if all assets are missing.
+    Does not import Streamlit (UI stays decoupled from utils/).
     """
-    color_key = selected_color.lower().strip()
+    color_key = str(selected_color or "").lower().strip()
     if "sage" in color_key:
-        candidates = (BACKPACK_FRONT_SAGE_JPG, BACKPACK_FRONT_SAGE)
+        candidates = (BACKPACK_FRONT_SAGE_JPG, BACKPACK_FRONT_SAGE, BACKPACK_FRONT_BASE)
+        label = "backpack_front_sage"
     elif "steel" in color_key or "blue" in color_key:
-        candidates = (BACKPACK_FRONT_STEEL_JPG, BACKPACK_FRONT_STEEL)
+        candidates = (BACKPACK_FRONT_STEEL_JPG, BACKPACK_FRONT_STEEL, BACKPACK_FRONT_BASE)
+        label = "backpack_front_steelblue"
     else:
         candidates = (BACKPACK_FRONT_BASE,)
+        label = "backpack_front_base"
 
-    target = _resolve_local_front_photo(*candidates)
-    default = _resolve_local_front_photo(BACKPACK_FRONT_BASE)
-    try:
-        if target is not None:
-            return _open_local_rgb(target).convert("RGBA")
-        print(f"Asset missing for color={selected_color!r}. Using base image.", flush=True)
-        if default is None:
-            raise FileNotFoundError(BACKPACK_FRONT_BASE)
-        return _open_local_rgb(default).convert("RGBA")
-    except Exception as exc:
-        print(f"Error loading image: {exc}", flush=True)
-        print(traceback.format_exc(), flush=True)
-        if default is not None and (target is None or target != default):
-            try:
-                return _open_local_rgb(default).convert("RGBA")
-            except Exception:
-                print(traceback.format_exc(), flush=True)
-        raise
+    for path in candidates:
+        try:
+            if path.is_file() and path.stat().st_size > 64:
+                with Image.open(path) as src:
+                    return src.convert("RGBA").copy()
+        except Exception as exc:
+            print(f"Could not load asset {path.name}: {exc}", flush=True)
+            print(traceback.format_exc(), flush=True)
+
+    print(f"Asset missing for color={selected_color!r} ({label}). Using placeholder.", flush=True)
+    _, _, w, h = BACKPACK_FRONT_BOX
+    return Image.new("RGBA", (max(8, w), max(8, h)), (160, 160, 160, 255))
 
 
 def _backpack_front_variant_path(
