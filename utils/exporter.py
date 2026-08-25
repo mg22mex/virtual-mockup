@@ -20,7 +20,9 @@ from reportlab.pdfgen import canvas
 from .catalog import fabric_sheet_lines, logo_color_rgb, style_family
 from .renderer import (
     BACKPACK_FRONT_SAGE,
+    BACKPACK_FRONT_SAGE_JPG,
     BACKPACK_FRONT_STEEL,
+    BACKPACK_FRONT_STEEL_JPG,
     FABRIC_COLORS,
     NAVY,
     JobSpec,
@@ -475,7 +477,12 @@ class WorksheetExporter:
                 if family == "backpack"
                 else None
             )
-            skip_photo_erase = native_path in {BACKPACK_FRONT_SAGE, BACKPACK_FRONT_STEEL}
+            skip_photo_erase = native_path in {
+                BACKPACK_FRONT_SAGE,
+                BACKPACK_FRONT_SAGE_JPG,
+                BACKPACK_FRONT_STEEL,
+                BACKPACK_FRONT_STEEL_JPG,
+            }
             for slot in spec["logos"]:
                 erase = str(slot.get("erase") or "")
                 if erase not in post:

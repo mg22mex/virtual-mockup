@@ -28,6 +28,9 @@ BACKPACK_LINEART_MASK = BACKPACK_DIR / "backpack_lineart_mask.png"
 BACKPACK_FRONT_BASE = BACKPACK_DIR / "backpack_front_base.png"
 BACKPACK_FRONT_SAGE = BACKPACK_DIR / "backpack_front_sage.png"
 BACKPACK_FRONT_STEEL = BACKPACK_DIR / "backpack_front_steelblue.png"
+# Optional JPEG sidecars (smaller Cloud checkout / lower peak RAM).
+BACKPACK_FRONT_SAGE_JPG = BACKPACK_DIR / "backpack_front_sage.jpg"
+BACKPACK_FRONT_STEEL_JPG = BACKPACK_DIR / "backpack_front_steelblue.jpg"
 # Worksheet Front View photo frame on page-1.png (pixels @ 144 DPI).
 BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
 # Artwork callout plate — keep lineart tint out of this square.
@@ -281,7 +284,7 @@ class MockupRenderer:
                     del line
 
             if native_front:
-                # Raw SKU photo last — never multiply / composite over it.
+                # Raw local SKU photo last — never multiply / composite / HTTP.
                 out = _paste_backpack_front_photo(out, variant)
                 applied = True
             elif fabric_rgb != black:
@@ -896,51 +899,94 @@ def _normalize_fabric_key(name: str | None) -> str:
     return " ".join(str(name or "").lower().replace("—", " ").replace("-", " ").split())
 
 
+def _resolve_local_front_photo(*candidates: Path) -> Path | None:
+    """Pick the first existing local asset path (never fetches over the network)."""
+    for path in candidates:
+        try:
+            if path.is_file() and path.stat().st_size > 64:
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def _open_local_rgb(path: Path) -> Image.Image:
+    """Open a local RGB image; raise FileNotFoundError if unreadable."""
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    with Image.open(path) as src:
+        return src.convert("RGB").copy()
+
+
 def _backpack_front_variant_path(
     fabric_name: str | None,
     fabric_rgb: tuple[int, int, int],
 ) -> Path | None:
-    """Return the native front photo for Sage / Steel Blue / Black when available."""
+    """Return a local native front photo for Sage / Steel Blue / Black when available."""
     key = _normalize_fabric_key(fabric_name)
     if "steel" in key and "blue" in key:
-        return BACKPACK_FRONT_STEEL if BACKPACK_FRONT_STEEL.is_file() else None
-    if key.startswith("sage") or key == "sage":
-        return BACKPACK_FRONT_SAGE if BACKPACK_FRONT_SAGE.is_file() else None
+        return _resolve_local_front_photo(BACKPACK_FRONT_STEEL_JPG, BACKPACK_FRONT_STEEL)
+    if key.startswith("sage") or key == "sage" or "sage" in key.split()[:1]:
+        return _resolve_local_front_photo(BACKPACK_FRONT_SAGE_JPG, BACKPACK_FRONT_SAGE)
     # RGB fallback when UI caption differs from catalog key.
     if fabric_rgb == FABRIC_COLORS.get("Steel Blue"):
-        return BACKPACK_FRONT_STEEL if BACKPACK_FRONT_STEEL.is_file() else None
+        return _resolve_local_front_photo(BACKPACK_FRONT_STEEL_JPG, BACKPACK_FRONT_STEEL)
     if fabric_rgb == FABRIC_COLORS.get("Sage"):
-        return BACKPACK_FRONT_SAGE if BACKPACK_FRONT_SAGE.is_file() else None
+        return _resolve_local_front_photo(BACKPACK_FRONT_SAGE_JPG, BACKPACK_FRONT_SAGE)
     if fabric_rgb == FABRIC_COLORS.get("Black (NRF 001)") or "black" in key:
-        return BACKPACK_FRONT_BASE if BACKPACK_FRONT_BASE.is_file() else None
+        return _resolve_local_front_photo(BACKPACK_FRONT_BASE)
     return None
 
 
 def _paste_backpack_front_photo(page: Image.Image, photo_path: Path) -> Image.Image:
-    """Cover the Front View frame with a native product photo (no tint)."""
+    """Cover the Front View frame with a native product photo (no tint).
+
+    Loads only from the local repo asset tree — never HTTP. Missing files fall
+    back to ``backpack_front_base.png`` or leave the page unchanged.
+    """
     out = page.convert("RGBA")
     x, y, w, h = BACKPACK_FRONT_BOX
     if w < 8 or h < 8:
         return out
-    # Rear-facing lifestyle shots — center bag panel under logo stamp.
-    if photo_path.resolve() == BACKPACK_FRONT_SAGE.resolve():
-        centering = (0.50, 0.48)
-    elif photo_path.resolve() == BACKPACK_FRONT_STEEL.resolve():
-        centering = (0.48, 0.50)
-    else:
-        centering = (0.50, 0.45)
+
+    load_path = photo_path
     try:
-        with Image.open(photo_path) as src:
+        if not load_path.is_file():
+            raise FileNotFoundError(load_path)
+        photo = _open_local_rgb(load_path)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        print(f"Renderer Error: cannot open {load_path}: {exc}", flush=True)
+        fallback = _resolve_local_front_photo(BACKPACK_FRONT_BASE)
+        if fallback is None:
+            return out
+        try:
+            photo = _open_local_rgb(fallback)
+            load_path = fallback
+        except (FileNotFoundError, OSError, ValueError):
+            print("Renderer Error:", traceback.format_exc(), flush=True)
+            return out
+
+    # Prefer identity paste when asset is already frame-sized (Cloud-safe path).
+    try:
+        if photo.size == (w, h):
+            fitted = photo
+        else:
+            name = load_path.name.lower()
+            if "sage" in name:
+                centering = (0.50, 0.48)
+            elif "steel" in name:
+                centering = (0.48, 0.50)
+            else:
+                centering = (0.50, 0.45)
             fitted = ImageOps.fit(
-                src.convert("RGB"),
+                photo,
                 (w, h),
                 method=Image.Resampling.LANCZOS,
                 centering=centering,
             )
+        out.paste(fitted, (x, y))
     except Exception:
         print("Renderer Error:", traceback.format_exc(), flush=True)
-        return out
-    out.paste(fitted, (x, y))
     return out
 
 
