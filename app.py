@@ -2,6 +2,9 @@
 
 UI stays decoupled from rendering and PDF export (utils/).
 Live proof shows the official production-worksheet pages after stamping.
+
+Module import is side-effect free: only imports + defs at top level.
+Streamlit cache registration and utils imports run inside main().
 """
 
 from __future__ import annotations
@@ -10,31 +13,11 @@ import hashlib
 import traceback
 from datetime import date
 from pathlib import Path
+from typing import Any, Callable
 
 import streamlit as st
 
-_IMPORT_ERROR: str | None = None
-try:
-    from skills.asset_logger import AssetLogger
-    from skills.state_memory import StateMemory
-    from utils.catalog import (
-        fabric_caption,
-        fabrics_for_styles,
-        logo_color_names,
-        logo_knockout_mode,
-        style_labels,
-    )
-    from utils.exporter import WorksheetExporter, worksheet_filename
-    from utils.project_guide import render_project_guide
-    from utils.renderer import JobSpec
-    from utils.vectors import SUPPORTED_EXTS, VectorLoadError, load_artwork
-except Exception:  # noqa: BLE001 — show Cloud import crashes on-screen
-    _IMPORT_ERROR = traceback.format_exc()
-    AssetLogger = StateMemory = WorksheetExporter = JobSpec = object  # type: ignore[misc,assignment]
-    VectorLoadError = Exception  # type: ignore[misc,assignment]
-    worksheet_filename = fabric_caption = fabrics_for_styles = logo_color_names = logo_knockout_mode = style_labels = render_project_guide = load_artwork = None  # type: ignore[assignment]
-    SUPPORTED_EXTS = {".svg"}
-
+# Top-level scope: imports + constants + function definitions only.
 ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "output"
 LOGO_DIR = ROOT / "assets" / "logos"
@@ -46,12 +29,79 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-
-STAMP_VERSION = 53
+STAMP_VERSION = 54
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
 FAMILY_KEYS = {"Umbrella": "umbrella", "Backpack": "backpack", "Poncho": "poncho"}
+
+# Filled by _ensure_imports() on first main() entry — never at import time.
+_IMPORT_ERROR: str | None = None
+_IMPORTS_READY = False
+AssetLogger: Any = None
+StateMemory: Any = None
+WorksheetExporter: Any = None
+JobSpec: Any = None
+VectorLoadError: Any = Exception
+worksheet_filename: Any = None
+fabric_caption: Any = None
+fabrics_for_styles: Any = None
+logo_color_names: Any = None
+logo_knockout_mode: Any = None
+style_labels: Any = None
+render_project_guide: Any = None
+load_artwork: Any = None
+SUPPORTED_EXTS: set[str] = {".svg"}
+
+_init_cached: Callable[..., Any] | None = None
+_preview_pages_cached: Callable[..., Any] | None = None
+
+
+def _ensure_imports() -> str | None:
+    """Import app dependencies once inside main() (never at module import)."""
+    global _IMPORT_ERROR, _IMPORTS_READY
+    global AssetLogger, StateMemory, WorksheetExporter, JobSpec, VectorLoadError
+    global worksheet_filename, fabric_caption, fabrics_for_styles, logo_color_names
+    global logo_knockout_mode, style_labels, render_project_guide, load_artwork, SUPPORTED_EXTS
+    if _IMPORTS_READY:
+        return _IMPORT_ERROR
+    try:
+        from skills.asset_logger import AssetLogger as _AssetLogger
+        from skills.state_memory import StateMemory as _StateMemory
+        from utils.catalog import (
+            fabric_caption as _fabric_caption,
+            fabrics_for_styles as _fabrics_for_styles,
+            logo_color_names as _logo_color_names,
+            logo_knockout_mode as _logo_knockout_mode,
+            style_labels as _style_labels,
+        )
+        from utils.exporter import WorksheetExporter as _WorksheetExporter
+        from utils.exporter import worksheet_filename as _worksheet_filename
+        from utils.project_guide import render_project_guide as _render_project_guide
+        from utils.renderer import JobSpec as _JobSpec
+        from utils.vectors import SUPPORTED_EXTS as _SUPPORTED_EXTS
+        from utils.vectors import VectorLoadError as _VectorLoadError
+        from utils.vectors import load_artwork as _load_artwork
+
+        AssetLogger = _AssetLogger
+        StateMemory = _StateMemory
+        WorksheetExporter = _WorksheetExporter
+        JobSpec = _JobSpec
+        VectorLoadError = _VectorLoadError
+        worksheet_filename = _worksheet_filename
+        fabric_caption = _fabric_caption
+        fabrics_for_styles = _fabrics_for_styles
+        logo_color_names = _logo_color_names
+        logo_knockout_mode = _logo_knockout_mode
+        style_labels = _style_labels
+        render_project_guide = _render_project_guide
+        load_artwork = _load_artwork
+        SUPPORTED_EXTS = set(_SUPPORTED_EXTS)
+        _IMPORT_ERROR = None
+    except Exception:  # noqa: BLE001 — show Cloud import crashes on-screen
+        _IMPORT_ERROR = traceback.format_exc()
+    _IMPORTS_READY = True
+    return _IMPORT_ERROR
 
 
 def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
@@ -62,25 +112,13 @@ def _logo_fingerprint(logo_bytes: bytes | None, logo_name: str | None) -> str:
     return f"{logo_name or 'logo'}:{len(logo_bytes)}:{digest}"
 
 
-@st.cache_resource
-def _init(version: int = STAMP_VERSION) -> tuple[StateMemory, AssetLogger, WorksheetExporter]:
+def _init_uncached(version: int = STAMP_VERSION) -> tuple[Any, Any, Any]:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     LOGO_DIR.mkdir(parents=True, exist_ok=True)
     return StateMemory(ROOT), AssetLogger(ROOT), WorksheetExporter()
 
 
-def _clear_artwork_state() -> None:
-    for key in ("logo_bytes", "logo_name", "_saved_logo", "pdf_bytes", "pdf_name", "pdf_pages", "pdf_fingerprint"):
-        st.session_state.pop(key, None)
-    try:
-        _preview_pages.clear()
-    except Exception:
-        pass
-
-
-# No show_spinner: Cloud reboots kill the spinner thread and surface "Event loop is closed".
-@st.cache_data(max_entries=12)
-def _preview_pages(
+def _preview_pages_uncached(
     stamp_version: int,
     client: str,
     panel_config: str,
@@ -121,6 +159,75 @@ def _preview_pages(
     return exporter.preview_jpegs(job, logo)
 
 
+def _init(version: int = STAMP_VERSION) -> tuple[Any, Any, Any]:
+    """Lazy ``st.cache_resource`` — registered only under a live Streamlit run."""
+    global _init_cached
+    if _init_cached is None:
+        _init_cached = st.cache_resource(_init_uncached)
+    return _init_cached(version)
+
+
+def _preview_pages(
+    stamp_version: int,
+    client: str,
+    panel_config: str,
+    panel_count: int,
+    product_keys: tuple[str, ...],
+    family: str,
+    fabric_name: str,
+    logo_color_name: str,
+    request_date: str,
+    last_update: str,
+    project_owner: str,
+    print_order: str,
+    year: int,
+    knockout_mode: str,
+    knockout_white: bool,
+    logo_fingerprint: str,
+    logo_bytes: bytes | None,
+    logo_name: str | None,
+) -> list[tuple[str, bytes]]:
+    """Lazy ``st.cache_data`` — registered only under a live Streamlit run."""
+    global _preview_pages_cached
+    if _preview_pages_cached is None:
+        # No show_spinner: Cloud reboots kill the spinner thread ("Event loop is closed").
+        _preview_pages_cached = st.cache_data(max_entries=12)(_preview_pages_uncached)
+    return _preview_pages_cached(
+        stamp_version,
+        client,
+        panel_config,
+        panel_count,
+        product_keys,
+        family,
+        fabric_name,
+        logo_color_name,
+        request_date,
+        last_update,
+        project_owner,
+        print_order,
+        year,
+        knockout_mode,
+        knockout_white,
+        logo_fingerprint,
+        logo_bytes,
+        logo_name,
+    )
+
+
+def _clear_preview_cache() -> None:
+    try:
+        if _preview_pages_cached is not None:
+            _preview_pages_cached.clear()
+    except Exception:
+        pass
+
+
+def _clear_artwork_state() -> None:
+    for key in ("logo_bytes", "logo_name", "_saved_logo", "pdf_bytes", "pdf_name", "pdf_pages", "pdf_fingerprint"):
+        st.session_state.pop(key, None)
+    _clear_preview_cache()
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Virtual Mockup Creator · Weatherman",
@@ -128,12 +235,13 @@ def main() -> None:
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    if _IMPORT_ERROR:
-        print(_IMPORT_ERROR, flush=True)
+    import_error = _ensure_imports()
+    if import_error:
+        print(import_error, flush=True)
         st.error("Failed to import application modules. Traceback is below.")
-        st.code(_IMPORT_ERROR, language="text")
+        st.code(import_error, language="text")
         return
-    if WM_MARK.exists():
+    if WM_MARK.is_file():
         st.logo(str(WM_MARK), size="large")
 
     # Selected multiselect/segmented chips use theme.primaryColor (Weatherman coral).
@@ -384,7 +492,7 @@ def main() -> None:
     prev_fp = st.session_state.get("_job_fingerprint")
     if prev_fp != job_fp:
         # Drop any cached preview from a prior fabric/logo/upload so nothing overlays.
-        _preview_pages.clear()
+        _clear_preview_cache()
         st.session_state["_job_fingerprint"] = job_fp
 
     left, right = st.columns([2, 1], vertical_alignment="top")

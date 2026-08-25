@@ -269,8 +269,7 @@ class MockupRenderer:
         try:
             out = page.convert("RGBA")
             applied = False
-            variant = _backpack_front_variant_path(fabric_name, fabric_rgb)
-            native_front = variant is not None and variant.is_file()
+            native_front = _uses_native_front(fabric_name, fabric_rgb)
 
             # Line-art first (schematic only). Punch front photo + artwork so
             # flat tint cannot wash the lifestyle plate or callout.
@@ -284,8 +283,9 @@ class MockupRenderer:
                     del line
 
             if native_front:
-                # Raw local SKU photo last — never multiply / composite / HTTP.
-                out = _paste_backpack_front_photo(out, variant)
+                # Raw local SKU photo last — no multiply / composite / alpha filters.
+                photo = get_base_mockup_image(fabric_name or "")
+                out = _paste_backpack_front_photo(out, photo, color_hint=fabric_name)
                 applied = True
             elif fabric_rgb != black:
                 photo_mask = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
@@ -918,15 +918,49 @@ def _open_local_rgb(path: Path) -> Image.Image:
         return src.convert("RGB").copy()
 
 
+def get_base_mockup_image(selected_color: str) -> Image.Image:
+    """Load the native backpack front photo for a colorway (case-insensitive).
+
+    Prefers JPEG sidecars when present (lower Cloud RAM). Falls back to
+    ``backpack_front_base.png``. Never uses Streamlit / HTTP — print only.
+    """
+    color_key = selected_color.lower().strip()
+    if "sage" in color_key:
+        candidates = (BACKPACK_FRONT_SAGE_JPG, BACKPACK_FRONT_SAGE)
+    elif "steel" in color_key or "blue" in color_key:
+        candidates = (BACKPACK_FRONT_STEEL_JPG, BACKPACK_FRONT_STEEL)
+    else:
+        candidates = (BACKPACK_FRONT_BASE,)
+
+    target = _resolve_local_front_photo(*candidates)
+    default = _resolve_local_front_photo(BACKPACK_FRONT_BASE)
+    try:
+        if target is not None:
+            return _open_local_rgb(target).convert("RGBA")
+        print(f"Asset missing for color={selected_color!r}. Using base image.", flush=True)
+        if default is None:
+            raise FileNotFoundError(BACKPACK_FRONT_BASE)
+        return _open_local_rgb(default).convert("RGBA")
+    except Exception as exc:
+        print(f"Error loading image: {exc}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        if default is not None and (target is None or target != default):
+            try:
+                return _open_local_rgb(default).convert("RGBA")
+            except Exception:
+                print(traceback.format_exc(), flush=True)
+        raise
+
+
 def _backpack_front_variant_path(
     fabric_name: str | None,
     fabric_rgb: tuple[int, int, int],
 ) -> Path | None:
     """Return a local native front photo for Sage / Steel Blue / Black when available."""
     key = _normalize_fabric_key(fabric_name)
-    if "steel" in key and "blue" in key:
+    if "steel" in key:
         return _resolve_local_front_photo(BACKPACK_FRONT_STEEL_JPG, BACKPACK_FRONT_STEEL)
-    if key.startswith("sage") or key == "sage" or "sage" in key.split()[:1]:
+    if "sage" in key:
         return _resolve_local_front_photo(BACKPACK_FRONT_SAGE_JPG, BACKPACK_FRONT_SAGE)
     # RGB fallback when UI caption differs from catalog key.
     if fabric_rgb == FABRIC_COLORS.get("Steel Blue"):
@@ -938,48 +972,63 @@ def _backpack_front_variant_path(
     return None
 
 
-def _paste_backpack_front_photo(page: Image.Image, photo_path: Path) -> Image.Image:
+def _uses_native_front(fabric_name: str | None, fabric_rgb: tuple[int, int, int]) -> bool:
+    """True when Sage / Steel Blue should paste a photo with no multiply tint."""
+    key = _normalize_fabric_key(fabric_name)
+    if "sage" in key or "steel" in key:
+        return True
+    if fabric_rgb in {FABRIC_COLORS.get("Sage"), FABRIC_COLORS.get("Steel Blue")}:
+        return True
+    return False
+
+
+def _paste_backpack_front_photo(
+    page: Image.Image,
+    photo: Image.Image | Path,
+    *,
+    color_hint: str | None = None,
+) -> Image.Image:
     """Cover the Front View frame with a native product photo (no tint).
 
-    Loads only from the local repo asset tree — never HTTP. Missing files fall
-    back to ``backpack_front_base.png`` or leave the page unchanged.
+    Accepts a preloaded RGBA/RGB image from ``get_base_mockup_image`` or a Path.
+    Never applies ImageChops.multiply / composite / alpha-mask filters.
     """
     out = page.convert("RGBA")
     x, y, w, h = BACKPACK_FRONT_BOX
     if w < 8 or h < 8:
         return out
 
-    load_path = photo_path
+    load_path: Path | None = photo if isinstance(photo, Path) else None
     try:
-        if not load_path.is_file():
-            raise FileNotFoundError(load_path)
-        photo = _open_local_rgb(load_path)
+        if isinstance(photo, Path):
+            if not photo.is_file():
+                raise FileNotFoundError(photo)
+            rgb = _open_local_rgb(photo)
+        else:
+            rgb = photo.convert("RGB")
     except (FileNotFoundError, OSError, ValueError) as exc:
-        print(f"Renderer Error: cannot open {load_path}: {exc}", flush=True)
-        fallback = _resolve_local_front_photo(BACKPACK_FRONT_BASE)
-        if fallback is None:
-            return out
+        print(f"Renderer Error: cannot open front photo: {exc}", flush=True)
         try:
-            photo = _open_local_rgb(fallback)
-            load_path = fallback
-        except (FileNotFoundError, OSError, ValueError):
+            rgb = get_base_mockup_image(color_hint or "base").convert("RGB")
+            load_path = BACKPACK_FRONT_BASE
+        except Exception:
             print("Renderer Error:", traceback.format_exc(), flush=True)
             return out
 
     # Prefer identity paste when asset is already frame-sized (Cloud-safe path).
     try:
-        if photo.size == (w, h):
-            fitted = photo
+        if rgb.size == (w, h):
+            fitted = rgb
         else:
-            name = load_path.name.lower()
+            name = (load_path.name if load_path else (color_hint or "")).lower()
             if "sage" in name:
                 centering = (0.50, 0.48)
-            elif "steel" in name:
+            elif "steel" in name or "blue" in name:
                 centering = (0.48, 0.50)
             else:
                 centering = (0.50, 0.45)
             fitted = ImageOps.fit(
-                photo,
+                rgb,
                 (w, h),
                 method=Image.Resampling.LANCZOS,
                 centering=centering,

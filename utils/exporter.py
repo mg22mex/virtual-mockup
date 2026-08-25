@@ -19,15 +19,11 @@ from reportlab.pdfgen import canvas
 
 from .catalog import fabric_sheet_lines, logo_color_rgb, style_family
 from .renderer import (
-    BACKPACK_FRONT_SAGE,
-    BACKPACK_FRONT_SAGE_JPG,
-    BACKPACK_FRONT_STEEL,
-    BACKPACK_FRONT_STEEL_JPG,
     FABRIC_COLORS,
     NAVY,
     JobSpec,
     MockupRenderer,
-    _backpack_front_variant_path,
+    _uses_native_front,
     fit_logo_uniform,
 )
 
@@ -472,17 +468,9 @@ class WorksheetExporter:
                     )
             # Native Sage/Steel photos have no baked M13 mark — skip photo inpaint
             # so lifestyle highlights are not mistaken for pale ink.
-            native_path = (
-                _backpack_front_variant_path(job.fabric_name, fabric)
-                if family == "backpack"
-                else None
+            skip_photo_erase = family == "backpack" and _uses_native_front(
+                job.fabric_name, fabric
             )
-            skip_photo_erase = native_path in {
-                BACKPACK_FRONT_SAGE,
-                BACKPACK_FRONT_SAGE_JPG,
-                BACKPACK_FRONT_STEEL,
-                BACKPACK_FRONT_STEEL_JPG,
-            }
             for slot in spec["logos"]:
                 erase = str(slot.get("erase") or "")
                 if erase not in post:
