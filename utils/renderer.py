@@ -33,8 +33,8 @@ BACKPACK_FRONT_SAGE_JPG = BACKPACK_DIR / "backpack_front_sage.jpg"
 BACKPACK_FRONT_STEEL_JPG = BACKPACK_DIR / "backpack_front_steelblue.jpg"
 # Worksheet Front View photo frame on page-1.png (pixels @ 144 DPI).
 BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
-# Artwork callout plate — keep lineart tint out of this square.
-BACKPACK_ARTWORK_BOX = (2378, 1500, 1228, 1000)  # x, y, w, h (cover @ 144 DPI)
+# Artwork callout plate (incl. former charcoal header/footer bands) @ 144 DPI.
+BACKPACK_ARTWORK_BOX = (2378, 1450, 1228, 1150)  # x, y, w, h
 
 NAVY = (38, 45, 101)
 HEADER_BG = (246, 245, 243)
@@ -259,9 +259,10 @@ class MockupRenderer:
         """Apply Venture Dry Pack colorway to the worksheet page.
 
         Sage / Steel Blue paste native on-model photos with **no** front-view
-        multiply/composite tint. Line-art schematic fills still shift color, but
-        the front photo frame and Artwork callout are punched out of that mask
-        so the model/background never pick up a fabric wash.
+        multiply/composite tint. Line-art schematic fills still shift to the
+        active fabric RGB (Graphic Sample Option #1). Front photo + Artwork
+        callout are punched out of that mask so the lifestyle plate and swatch
+        stay clean.
 
         Returns ``None`` if nothing could be applied so the caller can fall back.
         """
@@ -271,14 +272,8 @@ class MockupRenderer:
             applied = False
             native_front = _uses_native_front(fabric_name, fabric_rgb)
 
-            # Sage / Steel: clean SKU photo only — no multiply, composite, or alpha masks.
-            # Client logo is stamped later by the exporter on top of this plate.
-            if native_front:
-                photo = get_base_mockup_image(fabric_name or "")
-                out = _paste_backpack_front_photo(out, photo, color_hint=fabric_name)
-                return out
-
-            # Non-native colorways: line-art flat tint + optional photo-mask multiply.
+            # Line-art body fill → active fabric (schematic / Graphic Sample #1).
+            # Punch front photo + artwork so tint never washes those plates.
             if fabric_rgb != black:
                 line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
                 if line is not None:
@@ -287,6 +282,13 @@ class MockupRenderer:
                     out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
                     applied = True
                     del line
+
+            if native_front:
+                # Raw local SKU photo — no multiply / composite / photo-mask tint.
+                photo = get_base_mockup_image(fabric_name or "")
+                out = _paste_backpack_front_photo(out, photo, color_hint=fabric_name)
+                applied = True
+            elif fabric_rgb != black:
                 photo_mask = _load_alpha_mask(BACKPACK_PHOTO_MASK, out.size, feather=True)
                 if photo_mask is not None:
                     out = tint_with_alpha_mask(out, fabric_rgb, photo_mask, mode="photo")
@@ -1019,9 +1021,11 @@ def _paste_backpack_front_photo(
         else:
             name = (load_path.name if load_path else (color_hint or "")).lower()
             if "sage" in name:
-                centering = (0.50, 0.48)
+                centering = (0.47, 0.46)
             elif "steel" in name or "blue" in name:
-                centering = (0.48, 0.50)
+                # Three-quarter lifestyle shot — bias left so upper-center panel
+                # lands under the worksheet logo anchor.
+                centering = (0.33, 0.48)
             else:
                 centering = (0.50, 0.45)
             fitted = ImageOps.fit(
