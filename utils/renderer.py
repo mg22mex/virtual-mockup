@@ -33,8 +33,8 @@ BACKPACK_FRONT_SAGE_JPG = BACKPACK_DIR / "backpack_front_sage.jpg"
 BACKPACK_FRONT_STEEL_JPG = BACKPACK_DIR / "backpack_front_steelblue.jpg"
 # Worksheet Front View photo frame on page-1.png (pixels @ 144 DPI).
 BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
-# Artwork callout plate (incl. former charcoal header/footer bands) @ 144 DPI.
-BACKPACK_ARTWORK_BOX = (2378, 1450, 1228, 1150)  # x, y, w, h
+# Artwork callout plate @ 144 DPI — full dark preview square incl. top/bottom bands.
+BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 
 NAVY = (38, 45, 101)
 HEADER_BG = (246, 245, 243)
@@ -291,22 +291,21 @@ class MockupRenderer:
 
         Returns ``None`` if nothing could be applied so the caller can fall back.
         """
-        black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
+        black = FABRIC_COLORS.get("Black (NRF 001)", (30, 30, 30))
         try:
             out = page.convert("RGBA")
             applied = False
             native_front = _uses_native_front(fabric_name, fabric_rgb)
 
-            # Line-art body fill → active fabric (schematic / Graphic Sample #1).
-            # Punch front photo + artwork so tint never washes those plates.
-            if fabric_rgb != black:
-                line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
-                if line is not None:
-                    line = _punch_mask_rect(line, BACKPACK_FRONT_BOX)
-                    line = _punch_mask_rect(line, BACKPACK_ARTWORK_BOX)
-                    out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
-                    applied = True
-                    del line
+            # Line-art body → continuous fabric (Graphic Sample #1).
+            # Punch front photo + Artwork so tint never washes those plates or UI chrome.
+            line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
+            if line is not None:
+                line = _punch_mask_rect(line, BACKPACK_FRONT_BOX)
+                line = _punch_mask_rect(line, BACKPACK_ARTWORK_BOX)
+                out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
+                applied = True
+                del line
 
             if native_front:
                 # Raw local SKU photo — no multiply / composite / photo-mask tint.
@@ -324,6 +323,16 @@ class MockupRenderer:
         except Exception:
             print("Renderer Error:", traceback.format_exc(), flush=True)
             return page
+
+    def solid_artwork_panel(
+        self,
+        size: tuple[int, int],
+        fabric_rgb: tuple[int, int, int],
+    ) -> Image.Image:
+        """Edge-to-edge solid fabric swatch — no template letterbox or base bleed."""
+        w, h = max(1, int(size[0])), max(1, int(size[1]))
+        color = tuple(int(v) for v in fabric_rgb) + (255,)
+        return Image.new("RGBA", (w, h), color)
 
     # ----------------------------------------------------------- WM brand mark
     def weatherman_mark(self, size: int, fill: tuple[int, int, int] = WHITE, bg=NAVY) -> Image.Image:
@@ -1085,7 +1094,8 @@ def tint_with_alpha_mask(
     ``mode="photo"`` multiplies the base photo by a solid fabric fill
     (``ImageChops.multiply``), then ``Image.composite``s over the original with
     the PNG mask — zipper lines and deep shadows stay crisp.
-    ``mode="flat"`` lifts line-art fills so handles/mesh match the body.
+    ``mode="flat"`` paints bag fills to fabric RGB while keeping white paper and
+    Canny-detected ink strokes — never a full-page multiply over headers/labels.
 
     Only the mask bounding box is processed (full-page blends OOM on Cloud).
     """
@@ -1109,11 +1119,24 @@ def tint_with_alpha_mask(
             if out.ndim != 3 or out.shape[2] < 3:
                 return page_rgba
             rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
-            a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
-            src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
+            a = alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0
             dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
-            tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
-            blended = rgb * (1.0 - a) + tinted * a
+            lum = rgb.mean(axis=2)
+            chroma = rgb.max(axis=2) - rgb.min(axis=2)
+            # Only charcoal bag fills (~template lum 35–85, low chroma). Leaves
+            # white paper, navy headers, and mid-grey UI chrome untinted.
+            lum_u8 = np.clip(lum, 0, 255).astype(np.uint8)
+            edges = cv2.Canny(lum_u8, 40, 120)
+            stroke = cv2.dilate(edges, np.ones((2, 2), np.uint8), iterations=1) > 0
+            bag_fill = (
+                (a > 0.12)
+                & (lum >= 22.0)
+                & (lum <= 88.0)
+                & (chroma < 42.0)
+                & (~stroke)
+            )
+            w = (a * bag_fill.astype(np.float32))[..., None]
+            blended = rgb * (1.0 - w) + dst_a * w
             out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
             return Image.fromarray(out, "RGBA")
 
