@@ -291,22 +291,22 @@ class MockupRenderer:
 
         Returns ``None`` if nothing could be applied so the caller can fall back.
         """
-        black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
+        black = FABRIC_COLORS.get("Black (NRF 001)", (30, 30, 30))
         try:
             out = page.convert("RGBA")
             applied = False
             native_front = _uses_native_front(fabric_name, fabric_rgb)
 
             # Line-art body fill → active fabric (schematic / Graphic Sample #1).
-            # Punch front photo + artwork so tint never washes those plates.
-            if fabric_rgb != black:
-                line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
-                if line is not None:
-                    line = _punch_mask_rect(line, BACKPACK_FRONT_BOX)
-                    line = _punch_mask_rect(line, BACKPACK_ARTWORK_BOX)
-                    out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
-                    applied = True
-                    del line
+            # Flat remap lifts dark bag fills to fabric while leaving white paper
+            # untouched (mask is full-page; front + artwork plates are punched out).
+            line = _load_alpha_mask(BACKPACK_LINEART_MASK, out.size)
+            if line is not None:
+                line = _punch_mask_rect(line, BACKPACK_FRONT_BOX)
+                line = _punch_mask_rect(line, BACKPACK_ARTWORK_BOX)
+                out = tint_with_alpha_mask(out, fabric_rgb, line, mode="flat")
+                applied = True
+                del line
 
             if native_front:
                 # Raw local SKU photo — no multiply / composite / photo-mask tint.
@@ -1085,7 +1085,8 @@ def tint_with_alpha_mask(
     ``mode="photo"`` multiplies the base photo by a solid fabric fill
     (``ImageChops.multiply``), then ``Image.composite``s over the original with
     the PNG mask — zipper lines and deep shadows stay crisp.
-    ``mode="flat"`` lifts line-art fills so handles/mesh match the body.
+    ``mode="flat"`` paints bag fills to fabric RGB while keeping white paper and
+    Canny-detected ink strokes (Graphic Sample Option #1 continuous colorway).
 
     Only the mask bounding box is processed (full-page blends OOM on Cloud).
     """
@@ -1108,12 +1109,22 @@ def tint_with_alpha_mask(
             out = np.array(page_rgba, copy=True)
             if out.ndim != 3 or out.shape[2] < 3:
                 return page_rgba
+            import cv2
+
             rgb = out[y0:y1, x0:x1, :3].astype(np.float32)
-            a = (alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0)[..., None]
-            src_a = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype=np.float32)
+            a = alpha_u8[y0:y1, x0:x1].astype(np.float32) / 255.0
             dst_a = np.array(tuple(int(v) for v in fabric_rgb), dtype=np.float32)
-            tinted = np.clip(np.maximum(rgb, src_a) + (dst_a - src_a), 0, 255)
-            blended = rgb * (1.0 - a) + tinted * a
+            lum = rgb.mean(axis=2)
+            chroma = rgb.max(axis=2) - rgb.min(axis=2)
+            # Worksheet paper stays white.
+            paper = (lum >= 248.0) & (chroma < 18.0)
+            # True ink strokes via edges — bag fills are ~lum 40–60 and must become fabric.
+            lum_u8 = np.clip(lum, 0, 255).astype(np.uint8)
+            edges = cv2.Canny(lum_u8, 40, 120)
+            stroke = cv2.dilate(edges, np.ones((2, 2), np.uint8), iterations=1) > 0
+            fill = (a > 0.12) & (~paper) & (~stroke)
+            w = (a * fill.astype(np.float32))[..., None]
+            blended = rgb * (1.0 - w) + dst_a * w
             out[y0:y1, x0:x1, :3] = np.clip(blended, 0, 255).astype(np.uint8)
             return Image.fromarray(out, "RGBA")
 
