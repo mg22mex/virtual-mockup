@@ -23,7 +23,6 @@ from .renderer import (
     NAVY,
     JobSpec,
     MockupRenderer,
-    _uses_native_front,
     fit_logo_uniform,
 )
 
@@ -87,13 +86,13 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — upper-center panel below zipper, inset from seams.
+            # Front-view photo — locked upper-center below zipper across all colorways.
             {
-                "box": (510, 872, 155, 42),
-                "cover": (480, 840, 220, 100),
+                "box": (518, 888, 150, 40),
+                "cover": (400, 790, 400, 220),
                 "erase": "photo",
             },
-            # Artwork callout — fabric swatch + vector outline + client logo.
+            # Artwork callout — solid fabric swatch + crisp white client logo only.
             {
                 "box": (1286, 922, 420, 180),
                 "cover": (1189, 725, 614, 575),
@@ -101,8 +100,13 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "crisp": True,
                 "fit_pad": 0.14,
             },
-            # Front-view line drawing — 9.2 × 4.5 cm bounds on upper-center panel.
-            {"box": _BACKPACK_DRAW_BOX, "cover": _BACKPACK_DRAW_COVER, "erase": "flat"},
+            # Front-view line drawing — clear baked sample mark, then stamp client logo.
+            {
+                "box": _BACKPACK_DRAW_BOX,
+                "cover": _BACKPACK_DRAW_COVER,
+                "erase": "flat",
+                "clear_default": True,
+            },
         ],
         "chip": (1310, 60, 390, 150),
         "header_fields": {
@@ -454,14 +458,15 @@ class WorksheetExporter:
                         polygons=spec.get("recolor_polys"),
                         max_lum=float(spec.get("recolor_max_lum") or 95),
                     )
-            # Artwork preview: fabric base + line-art outline (not a flat solid block).
+            # Artwork preview: solid fabric swatch only (no default M13 / ghost layers).
             for slot in spec["logos"]:
                 if str(slot.get("erase") or "") == "artwork":
                     self._paint_artwork_swatch(page, base, slot, fabric)
-            # Native Sage/Steel photos have no baked M13 mark — skip photo inpaint
-            # so lifestyle highlights are not mistaken for pale ink.
-            skip_photo_erase = family == "backpack" and _uses_native_front(
-                job.fabric_name, fabric
+            # Sage/Steel native SKU photos have no baked mark — skip photo inpaint.
+            # Black base crop still carries sample M13; cleared via _blank_photo_logo_zone.
+            fabric_key = " ".join(str(job.fabric_name or "").lower().split())
+            skip_photo_erase = family == "backpack" and (
+                "sage" in fabric_key or "steel" in fabric_key or "black" in fabric_key
             )
             for slot in spec["logos"]:
                 erase = str(slot.get("erase") or "")
@@ -470,6 +475,18 @@ class WorksheetExporter:
                 if skip_photo_erase and erase == "photo":
                     continue
                 self._erase_slot(page, slot, fabric)
+            # Backpack line-art + black front: hard-clear residual default marks.
+            if family == "backpack":
+                for slot in spec["logos"]:
+                    erase = str(slot.get("erase") or "")
+                    if slot.get("clear_default"):
+                        cover = slot.get("cover") or slot.get("box")
+                        if cover:
+                            self._erase_pale_on_fabric(page, cover, fabric, fill=True)
+                    elif erase == "photo" and "black" in fabric_key:
+                        cover = slot.get("cover") or slot.get("box")
+                        if cover:
+                            self._blank_photo_logo_zone(page, cover, fabric)
             if mark is not None:
                 for slot in spec["logos"]:
                     self._stamp_logo(page, slot, mark, fabric, erase=False)
@@ -775,6 +792,70 @@ class WorksheetExporter:
         draw = ImageDraw.Draw(page)
         draw.rectangle((x, y, x + w, y + h), fill=fabric + (255,))
 
+    def _blank_photo_logo_zone(
+        self,
+        page: PILImage.Image,
+        cover: tuple[float, float, float, float],
+        fabric: tuple[int, int, int],
+    ) -> None:
+        """Wipe baked sample marks on the Black front photo using local fabric color.
+
+        ``backpack_front_base.png`` still contains the M13 sample; pale inpaint alone
+        leaves ghosts. Fill the logo cover with the median dark-fabric rim color so
+        only the client mark is stamped afterward.
+        """
+        import cv2
+        import numpy as np
+
+        x, y, w, h = _pts(cover)
+        x0, y0 = max(0, x), max(0, y)
+        x1, y1 = min(page.width, x + w), min(page.height, y + h)
+        if x1 - x0 < 12 or y1 - y0 < 12:
+            return
+        crop = np.array(page.crop((x0, y0, x1, y1)).convert("RGB"))
+        hh, ww = crop.shape[:2]
+        lum = crop.mean(axis=2).astype(np.float32)
+        chroma = crop.max(axis=2) - crop.min(axis=2)
+        # Pale / near-white sample glyphs on black fabric.
+        pale = ((lum > 95) & (chroma < 55)) | ((lum > 140) & (chroma < 80))
+        mask = pale.astype(np.uint8) * 255
+        if int(mask.max()) == 0:
+            # Fallback: blank whole cover with dark rim fabric.
+            band = max(4, min(hh, ww) // 12)
+            rim = np.zeros((hh, ww), dtype=bool)
+            rim[:band, :] = True
+            rim[-band:, :] = True
+            rim[:, :band] = True
+            rim[:, -band:] = True
+            dark = rim & (lum < 90)
+            local = (
+                np.median(crop[dark], axis=0).astype(np.uint8)
+                if int(dark.sum()) >= 16
+                else np.array(fabric, dtype=np.uint8)
+            )
+            crop[:, :] = local
+            page.paste(PILImage.fromarray(crop), (x0, y0))
+            return
+
+        mask = cv2.dilate(mask, np.ones((7, 7), np.uint8), iterations=3)
+        # Heal with surrounding fabric so the plate does not read as a flat patch.
+        bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+        healed = cv2.inpaint(bgr, mask, 7, cv2.INPAINT_TELEA)
+        crop = cv2.cvtColor(healed, cv2.COLOR_BGR2RGB)
+        # Second pass: any leftover pale crumbs → local dark fabric.
+        lum2 = crop.mean(axis=2)
+        chroma2 = crop.max(axis=2) - crop.min(axis=2)
+        leftover = (lum2 > 110) & (chroma2 < 60)
+        if leftover.any():
+            dark_px = crop[(lum2 < 85) & (~leftover)]
+            local = (
+                np.median(dark_px, axis=0).astype(np.uint8)
+                if len(dark_px) >= 16
+                else np.array(fabric, dtype=np.uint8)
+            )
+            crop[leftover] = local
+        page.paste(PILImage.fromarray(crop), (x0, y0))
+
     def _paint_artwork_swatch(
         self,
         page: PILImage.Image,
@@ -782,43 +863,16 @@ class WorksheetExporter:
         slot: dict,
         fabric: tuple[int, int, int],
     ) -> None:
-        """Artwork callout: fabric base, vector outline overlay, ready for client logo."""
-        import numpy as np
+        """Artwork callout: edge-to-edge solid fabric — no default brand / ghost layers.
 
+        Client logo is stamped afterward in pure white (or selected print color).
+        Template ink is intentionally not restored: the baked M13 extends past the
+        logo box and would silhouette as a second mark.
+        """
         cover = slot.get("cover") or slot.get("box")
-        box = slot.get("box")
-        if not cover or not box:
+        if not cover:
             return
-        cx, cy, cw, ch = _pts(cover)
-        bx, by, bw, bh = _pts(box)
-        if cw < 8 or ch < 8 or bw < 4 or bh < 4:
-            return
-
-        # a) Solid fabric base across the full callout (removes charcoal header/footer).
         self._fill_cover(page, cover, fabric)
-
-        # b) Restore worksheet label/frame ink outside the inner logo box (multiply).
-        tpl_rgb = np.array(template.crop((cx, cy, cx + cw, cy + ch)).convert("RGB"), dtype=np.float32)
-        out_rgb = np.array(page.crop((cx, cy, cx + cw, cy + ch)).convert("RGB"), dtype=np.float32)
-        lum = tpl_rgb.mean(axis=2)
-        ink = lum < 125
-        ix0, iy0 = max(0, bx - cx), max(0, by - cy)
-        ix1, iy1 = min(cw, ix0 + bw), min(ch, iy0 + bh)
-        ink[iy0:iy1, ix0:ix1] = False
-        out_rgb = np.where(ink[..., None], out_rgb * 0.28, out_rgb)
-
-        # c) Vector outline in the inner box from Graphic Sample Option #1 (fabric-tinted).
-        gx, gy, gw, gh = _pts(_BACKPACK_DRAW_COVER)
-        gx0, gy0 = max(0, gx), max(0, gy)
-        gx1, gy1 = min(page.width, gx + gw), min(page.height, gy + gh)
-        if gx1 - gx0 > 8 and gy1 - gy0 > 8:
-            sample = page.crop((gx0, gy0, gx1, gy1)).convert("RGBA")
-            sample = sample.resize((bw, bh), PILImage.Resampling.LANCZOS)
-            inner = PILImage.fromarray(np.clip(out_rgb[iy0:iy1, ix0:ix1], 0, 255).astype(np.uint8)).convert("RGBA")
-            inner = PILImage.alpha_composite(inner, sample)
-            out_rgb[iy0:iy1, ix0:ix1] = np.array(inner.convert("RGB"), dtype=np.float32)
-
-        page.paste(PILImage.fromarray(np.clip(out_rgb, 0, 255).astype(np.uint8)), (cx, cy))
 
     def _clear_schematic_fill(
         self,

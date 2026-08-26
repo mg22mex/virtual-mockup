@@ -177,7 +177,12 @@ class MockupRenderer:
         knockout: bool | str = True,
         fill_rgb: tuple[int, int, int] | None = None,
     ) -> Image.Image:
-        """Isolate the mark and fill it with White C, Black C, or a given print color."""
+        """Isolate the mark and fill it with White C, Black C, or a given print color.
+
+        White artwork (Pantone White C / knockout white) is forced to pure ``#FFFFFF``
+        using the alpha channel only — no luminance recolor or blend filters that
+        can edge-bleed or tint white client SVGs.
+        """
         img = logo.convert("RGBA")
         if knockout is True:
             mode = "white"
@@ -187,19 +192,39 @@ class MockupRenderer:
             mode = str(knockout or "none")
         if fill_rgb is None and mode not in {"white", "black"}:
             return img
+
         arr = np.array(img)
         rgb = arr[:, :, :3].astype(np.float32)
         alpha = arr[:, :, 3].astype(np.float32) / 255.0
-        lum = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
         opaque = alpha > 0.08
         if not np.any(opaque):
             return img
 
+        fill = fill_rgb or (PANTONE_WHITE_C if mode == "white" else PANTONE_BLACK_C)
+        want_white = mode == "white" or (
+            fill is not None and int(fill[0]) >= 250 and int(fill[1]) >= 250 and int(fill[2]) >= 250
+        )
+
+        if want_white:
+            # Pure white ink from alpha — preserve crisp white client art as-is.
+            # Harden soft SVG anti-alias so edges do not read as a gray ghost on dark fabric.
+            ink = self._drop_border_background(opaque)
+            out = np.zeros_like(arr)
+            out[:, :, 0] = 255
+            out[:, :, 1] = 255
+            out[:, :, 2] = 255
+            hard = np.where(ink & (alpha >= 0.28), 255.0, 0.0)
+            soft = np.where(ink & (alpha >= 0.08) & (alpha < 0.28), alpha * 255.0, 0.0)
+            out[:, :, 3] = np.clip(np.maximum(hard, soft), 0, 255).astype(np.uint8)
+            prepared = Image.fromarray(out)
+            bbox = prepared.getchannel("A").getbbox()
+            return prepared.crop(bbox) if bbox else prepared
+
+        lum = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
         bright = opaque & (lum >= 155)
         dark = opaque & (lum <= 95)
         n_opaque = max(int(opaque.sum()), 1)
         bright_ratio = float(bright.sum()) / n_opaque
-        fill = fill_rgb or (PANTONE_WHITE_C if mode == "white" else PANTONE_BLACK_C)
         if bright.any() and dark.any():
             ink = bright if bright_ratio < 0.55 else dark
         elif dark.any() and not bright.any():
@@ -972,11 +997,19 @@ def _backpack_front_variant_path(
 
 
 def _uses_native_front(fabric_name: str | None, fabric_rgb: tuple[int, int, int]) -> bool:
-    """True when Sage / Steel Blue should paste a photo with no multiply tint."""
+    """True when a clean local front photo should replace the worksheet plate.
+
+    Sage / Steel Blue / Black all paste native assets so the baked M13 sample
+    mark never ghosts under the client logo.
+    """
     key = _normalize_fabric_key(fabric_name)
-    if "sage" in key or "steel" in key:
+    if "sage" in key or "steel" in key or "black" in key:
         return True
-    if fabric_rgb in {FABRIC_COLORS.get("Sage"), FABRIC_COLORS.get("Steel Blue")}:
+    if fabric_rgb in {
+        FABRIC_COLORS.get("Sage"),
+        FABRIC_COLORS.get("Steel Blue"),
+        FABRIC_COLORS.get("Black (NRF 001)"),
+    }:
         return True
     return False
 
@@ -1020,14 +1053,14 @@ def _paste_backpack_front_photo(
             fitted = rgb
         else:
             name = (load_path.name if load_path else (color_hint or "")).lower()
+            # Shared upper-center panel lock across Sage / Steel / Black.
             if "sage" in name:
                 centering = (0.47, 0.46)
             elif "steel" in name or "blue" in name:
-                # Three-quarter lifestyle shot — bias left so upper-center panel
-                # lands under the worksheet logo anchor.
                 centering = (0.33, 0.48)
             else:
-                centering = (0.50, 0.45)
+                # Black base crop — match Sage vertical seat under zipper.
+                centering = (0.50, 0.46)
             fitted = ImageOps.fit(
                 rgb,
                 (w, h),
