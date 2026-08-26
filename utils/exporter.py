@@ -100,11 +100,11 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "crisp": True,
                 "fit_pad": 0.14,
             },
-            # Front-view line drawing — wipe baked sample mark into continuous fabric fill.
+            # Front-view line drawing — clear baked sample mark, then stamp client logo.
             {
                 "box": _BACKPACK_DRAW_BOX,
                 "cover": _BACKPACK_DRAW_COVER,
-                "erase": "none",
+                "erase": "flat",
                 "clear_default": True,
             },
         ],
@@ -425,41 +425,40 @@ class WorksheetExporter:
         try:
             spec = self._page_spec(family, page_no)
             fabric = job.fabric_rgb
-            black = FABRIC_COLORS.get("Black (NRF 001)", (30, 30, 30))
+            black = FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35))
             # Photo/sleeve heals sample already-tinted fabric. Running them before
             # recolor left a gray plate (skipped by the lum<95 shift) and leftover
             # bevels that read as a ghost under the new mark.
-            post = {"photo", "sleeve", "plate", "artwork", "none"}
+            post = {"photo", "sleeve", "plate"}
             for slot in spec["logos"]:
-                erase = str(slot.get("erase") or "")
-                if erase in post or slot.get("clear_default"):
-                    continue
-                self._erase_slot(page, slot, black)
-            # Backpack always runs mask/native-front path (incl. Black base paste).
-            if family == "backpack" or spec.get("recolor_masks"):
-                tinted = self.renderer.recolor_backpack_page(
-                    page,
-                    fabric,
-                    fabric_name=job.fabric_name,
-                )
-                if tinted is not None:
-                    page = tinted
-                elif fabric != black:
+                if str(slot.get("erase") or "") not in post:
+                    self._erase_slot(page, slot, black)
+            if fabric != black:
+                if family == "backpack" or spec.get("recolor_masks"):
+                    tinted = self.renderer.recolor_backpack_page(
+                        page,
+                        fabric,
+                        fabric_name=job.fabric_name,
+                    )
+                    if tinted is not None:
+                        page = tinted
+                    else:
+                        # Masks missing/unreadable → rectangular fallback (no crash).
+                        page = self._recolor_fabric(
+                            page,
+                            fabric,
+                            regions=[(555, 1830, 890, 1280)],
+                            max_lum=125,
+                        )
+                else:
                     page = self._recolor_fabric(
                         page,
                         fabric,
-                        regions=[(555, 1830, 890, 1280)],
-                        max_lum=125,
+                        regions=spec.get("recolor_regions"),
+                        polygons=spec.get("recolor_polys"),
+                        max_lum=float(spec.get("recolor_max_lum") or 95),
                     )
-            elif fabric != black:
-                page = self._recolor_fabric(
-                    page,
-                    fabric,
-                    regions=spec.get("recolor_regions"),
-                    polygons=spec.get("recolor_polys"),
-                    max_lum=float(spec.get("recolor_max_lum") or 95),
-                )
-            # Artwork preview: solid fabric swatch — never show baked M13 / default marks.
+            # Artwork preview: solid fabric swatch only (no default M13 / ghost layers).
             for slot in spec["logos"]:
                 if str(slot.get("erase") or "") == "artwork":
                     self._paint_artwork_swatch(page, base, slot, fabric)
@@ -471,29 +470,23 @@ class WorksheetExporter:
             )
             for slot in spec["logos"]:
                 erase = str(slot.get("erase") or "")
-                if erase not in {"photo", "sleeve", "plate"}:
+                if erase not in post:
                     continue
                 if skip_photo_erase and erase == "photo":
                     continue
                 self._erase_slot(page, slot, fabric)
-            # Always wipe backpack default marks — even when no client logo is uploaded.
+            # Backpack line-art + black front: hard-clear residual default marks.
             if family == "backpack":
                 for slot in spec["logos"]:
                     erase = str(slot.get("erase") or "")
-                    cover = slot.get("cover") or slot.get("box")
-                    if not cover:
-                        continue
                     if slot.get("clear_default"):
-                        # Line art: continuous fabric fill in art bound (no grey plate).
-                        self._clear_lineart_logo_zone(
-                            page,
-                            cover,
-                            fabric,
-                            box=slot.get("box"),
-                        )
+                        cover = slot.get("cover") or slot.get("box")
+                        if cover:
+                            self._erase_pale_on_fabric(page, cover, fabric, fill=True)
                     elif erase == "photo" and "black" in fabric_key:
-                        self._blank_photo_logo_zone(page, cover, fabric)
-            # Stamp ONLY an uploaded client logo — never a default / fallback mark.
+                        cover = slot.get("cover") or slot.get("box")
+                        if cover:
+                            self._blank_photo_logo_zone(page, cover, fabric)
             if mark is not None:
                 for slot in spec["logos"]:
                     self._stamp_logo(page, slot, mark, fabric, erase=False)
@@ -863,56 +856,6 @@ class WorksheetExporter:
             crop[leftover] = local
         page.paste(PILImage.fromarray(crop), (x0, y0))
 
-    def _clear_lineart_logo_zone(
-        self,
-        page: PILImage.Image,
-        cover: tuple[float, float, float, float],
-        fabric: tuple[int, int, int],
-        box: tuple[float, float, float, float] | None = None,
-    ) -> None:
-        """Remove baked sample marks from Graphic Sample without a visible plate.
-
-        Flat line-art fill already paints the bag body to fabric RGB, so filling
-        the 9.2 × 4.5 cm art bound with the same fabric is continuous (no plate).
-        Pale glyphs outside the bound are healed into the cover.
-        """
-        import cv2
-        import numpy as np
-
-        art_box = box or cover
-        self._fill_cover(page, art_box, fabric)
-
-        x, y, w, h = _pts(cover)
-        x0, y0 = max(0, x), max(0, y)
-        x1, y1 = min(page.width, x + w), min(page.height, y + h)
-        if x1 - x0 < 12 or y1 - y0 < 12:
-            return
-        crop = np.array(page.crop((x0, y0, x1, y1)).convert("RGB"))
-        fabric_a = np.array(fabric, dtype=np.float32)
-        lum = crop.mean(axis=2).astype(np.float32)
-        chroma = crop.max(axis=2) - crop.min(axis=2)
-        pale = (lum > 120) & (chroma < 90)
-        bx, by, bw, bh = _pts(art_box)
-        ix0, iy0 = max(0, bx - x0), max(0, by - y0)
-        ix1, iy1 = min(crop.shape[1], ix0 + bw), min(crop.shape[0], iy0 + bh)
-        if ix1 > ix0 and iy1 > iy0:
-            pale[iy0:iy1, ix0:ix1] = False
-        mask = pale.astype(np.uint8) * 255
-        if int(mask.max()) == 0:
-            return
-        mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=2)
-        bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
-        healed = cv2.inpaint(bgr, mask, 4, cv2.INPAINT_TELEA)
-        out = cv2.cvtColor(healed, cv2.COLOR_BGR2RGB).astype(np.float32)
-        lum2 = out.mean(axis=2)
-        chroma2 = out.max(axis=2) - out.min(axis=2)
-        leftover = (lum2 > 135) & (chroma2 < 75)
-        if ix1 > ix0 and iy1 > iy0:
-            leftover[iy0:iy1, ix0:ix1] = False
-        if leftover.any():
-            out[leftover] = fabric_a
-        page.paste(PILImage.fromarray(np.clip(out, 0, 255).astype(np.uint8)), (x0, y0))
-
     def _paint_artwork_swatch(
         self,
         page: PILImage.Image,
@@ -1080,7 +1023,7 @@ class WorksheetExporter:
                 mask &= ~fringe
         if not mask.any():
             return page
-        src = np.array(FABRIC_COLORS.get("Black (NRF 001)", (30, 30, 30)), dtype="int16")
+        src = np.array(FABRIC_COLORS.get("Black (NRF 001)", (35, 35, 35)), dtype="int16")
         dst = np.array(fabric, dtype="int16")
         delta = dst - src
         work = rgb
