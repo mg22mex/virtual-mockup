@@ -37,22 +37,22 @@ BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
 BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 
 # Front-view photo logo overlay slots per colorway (in 72 DPI PDF points).
-# Calibrated for upper compartment panel right beneath the top zipper.
+# Calibrated for upper compartment panel directly under the main zipper seam.
 BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
     "sage": {
-        "box": (538.5, 826.0, 125.0, 26.0),
+        "box": (538.5, 875.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 220.0),
         "erase": "photo",
         "rotate": 0,
     },
     "steel": {
-        "box": (455.0, 736.0, 115.0, 24.0),
+        "box": (470.0, 815.0, 130.0, 30.0),
         "cover": (400.0, 790.0, 400.0, 220.0),
         "erase": "photo",
         "rotate": -4,
     },
     "black": {
-        "box": (540.0, 755.0, 125.0, 26.0),
+        "box": (545.0, 830.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 220.0),
         "erase": "photo",
         "rotate": 0,

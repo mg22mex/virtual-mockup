@@ -86,9 +86,9 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — calibrated upper compartment panel right beneath top zipper.
+            # Front-view photo — calibrated upper-center placement under the main zipper.
             {
-                "box": (538.5, 826.0, 125.0, 26.0),
+                "box": (538.5, 875.0, 135.0, 32.0),
                 "cover": (400, 790, 400, 220),
                 "erase": "photo",
             },
