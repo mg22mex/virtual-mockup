@@ -139,7 +139,7 @@ PAGE_SPEC: dict[int, dict] = {
             {"box": (485, 860, 176, 42), "cover": (475, 852, 200, 58), "erase": "photo"},
             # Closed-sleeve wordmark — clone neighboring fabric after recolor (no rectangle).
             # Cover spans the Weatherman icon + wordmark; stop short of the ferrule.
-            {"box": (670, 1410, 170, 24), "cover": (628, 1408, 204, 28), "erase": "sleeve"},
+            {"box": (670, 1410, 170, 24), "cover": (595, 1385, 305, 75), "erase": "sleeve"},
             # Flat panel sample logo band.
             {"box": (758, 2504, 610, 165), "cover": (742, 2488, 644, 200), "erase": "flat"},
         ],
@@ -163,7 +163,7 @@ PAGE_SPEC: dict[int, dict] = {
         "logos": [
             {"box": (920, 2344, 292, 80), "cover": (900, 2320, 332, 128), "erase": "ink"},
             # Closed / horizontal sleeve wordmark — heal pale ink after recolor.
-            {"box": (1248, 3198, 210, 44), "cover": (1240, 3196, 220, 48), "erase": "sleeve"},
+            {"box": (1248, 3198, 210, 44), "cover": (1190, 3175, 275, 80), "erase": "sleeve"},
         ],
         "chip": (1300, 50, 618, 168),
     },
