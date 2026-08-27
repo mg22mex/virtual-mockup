@@ -225,7 +225,7 @@ def _trim_mark(mark: PILImage.Image) -> PILImage.Image:
 
 
 def _strip_mark_backdrop(mark: PILImage.Image) -> PILImage.Image:
-    """Drop a solid dark plate behind the mark; keep glyph ink (light or dark)."""
+    """Drop a solid dark plate behind the mark when contrasting light ink is inside."""
     import numpy as np
 
     arr = np.array(mark.convert("RGBA"))
@@ -235,9 +235,16 @@ def _strip_mark_backdrop(mark: PILImage.Image) -> PILImage.Image:
     opaque = alpha > 200
     if not opaque.any():
         return mark
+    bright = opaque & (lum > 160)
     dark_plate = opaque & (lum < 80)
-    # Only strip when a large filled plate is present (not black glyph strokes).
-    if float(dark_plate.mean()) > 0.18 and float(dark_plate.sum()) > 400:
+    # Only strip dark plate if there is BOTH a large dark background container AND bright glyphs inside
+    if (
+        bright.any()
+        and dark_plate.any()
+        and float(bright.sum()) > 50
+        and float(dark_plate.mean()) > 0.18
+        and float(dark_plate.sum()) > 400
+    ):
         arr[dark_plate, 3] = 0
         out = PILImage.fromarray(arr, "RGBA")
         bbox = out.getchannel("A").getbbox()
@@ -580,6 +587,27 @@ class WorksheetExporter:
             return
         outline = slot.get("outline")
         outline_px = max(1, int(round(float(slot.get("outline_pt") or 0) * SCALE))) if outline else 0
+
+        # Contrast detection and auto-outline safeguard
+        if not outline:
+            import numpy as np
+
+            arr_art = np.array(art)
+            alpha_mask = arr_art[:, :, 3] > 60
+            if alpha_mask.any():
+                ink_rgb = arr_art[alpha_mask, :3].mean(axis=0)
+                ink_lum = 0.2126 * float(ink_rgb[0]) + 0.7152 * float(ink_rgb[1]) + 0.0722 * float(ink_rgb[2])
+            else:
+                ink_lum = 255.0
+
+            slot_bg = (244, 244, 245) if erase_mode == "artwork" else fabric
+            bg_lum = 0.2126 * float(slot_bg[0]) + 0.7152 * float(slot_bg[1]) + 0.0722 * float(slot_bg[2])
+            delta_lum = abs(ink_lum - bg_lum)
+
+            if delta_lum < 48.0:
+                outline_px = max(1, int(round(1.0 * SCALE)))
+                outline = (255, 255, 255) if ink_lum < 128.0 else (120, 120, 120)
+
         pad = float(slot.get("fit_pad") or 0.0)
         fit_w = max(1, int(round((w - outline_px * 2) * (1.0 - pad))))
         fit_h = max(1, int(round((h - outline_px * 2) * (1.0 - pad))))
@@ -915,17 +943,14 @@ class WorksheetExporter:
         slot: dict,
         fabric: tuple[int, int, int],
     ) -> None:
-        """Artwork callout: PIL solid fabric panel — zero letterbox / black base.
-
-        Client logo is stamped afterward in pure white (or selected print color).
-        """
+        """Artwork callout: neutral background (#F4F4F5) so dark artwork remains clear regardless of fabric selection."""
         cover = slot.get("cover") or slot.get("box")
         if not cover:
             return
         x, y, w, h = _pts(cover)
         if w < 1 or h < 1:
             return
-        swatch = self.renderer.solid_artwork_panel((w, h), fabric)
+        swatch = self.renderer.solid_artwork_panel((w, h), bg_rgb=(244, 244, 245), border_rgb=(226, 232, 240))
         if page.mode == "RGBA":
             page.paste(swatch, (x, y), swatch)
         else:

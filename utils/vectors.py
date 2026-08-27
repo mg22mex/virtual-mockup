@@ -205,12 +205,60 @@ def _rasterize_cdr(raw: bytes, dpi: int) -> Image.Image:
     )
 
 
+def recolor_svg_bytes(raw: bytes, hex_or_rgb: str | tuple[int, int, int]) -> bytes:
+    """Inject logo_color values into SVG fill and stroke attributes before rasterization."""
+    if isinstance(hex_or_rgb, (tuple, list)):
+        hex_color = f"#{int(hex_or_rgb[0]):02X}{int(hex_or_rgb[1]):02X}{int(hex_or_rgb[2]):02X}"
+    else:
+        hex_color = str(hex_or_rgb)
+    if not hex_color.startswith("#"):
+        hex_color = f"#{hex_color}"
+
+    try:
+        svg_text = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return raw
+
+    import re
+
+    def _repl_style(m: re.Match) -> str:
+        return f"{m.group(1)}{hex_color}"
+
+    svg_text = re.sub(
+        r'(fill\s*:\s*)(?!none)[^;}"\s]+',
+        _repl_style,
+        svg_text,
+        flags=re.IGNORECASE,
+    )
+    svg_text = re.sub(
+        r'(stroke\s*:\s*)(?!none)[^;}"\s]+',
+        _repl_style,
+        svg_text,
+        flags=re.IGNORECASE,
+    )
+    svg_text = re.sub(
+        r'fill="((?!none)[^"]+)"',
+        f'fill="{hex_color}"',
+        svg_text,
+        flags=re.IGNORECASE,
+    )
+    svg_text = re.sub(
+        r'stroke="((?!none)[^"]+)"',
+        f'stroke="{hex_color}"',
+        svg_text,
+        flags=re.IGNORECASE,
+    )
+
+    return svg_text.encode("utf-8")
+
+
 def load_artwork(
     raw: bytes,
     filename: str,
     *,
     target_width: int = 2400,
     dpi: int = 300,
+    color_override: str | tuple[int, int, int] | None = None,
 ) -> Image.Image:
     """Return an RGBA raster of uploaded client artwork."""
     suffix = Path(filename).suffix.lower() or ".bin"
@@ -221,6 +269,8 @@ def load_artwork(
         )
 
     if suffix == ".svg":
+        if color_override:
+            raw = recolor_svg_bytes(raw, color_override)
         return _rasterize_svg(raw, target_width)
     if suffix == ".cdr":
         return _rasterize_cdr(raw, dpi)

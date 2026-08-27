@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 73
+STAMP_VERSION = 74
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -358,7 +358,8 @@ def _run_app() -> None:
 
     if logo_bytes and logo_name:
         try:
-            logo = load_artwork(logo_bytes, logo_name)
+            color_override = None if job.logo_color_name == "Match uploaded art" else job.logo_hex
+            logo = load_artwork(logo_bytes, logo_name, color_override=color_override)
         except VectorLoadError as exc:
             st.error(str(exc))
             return

@@ -55,7 +55,7 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
         "box": (612.0, 905.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 280.0),
         "erase": "photo",
-        "rotate": -7.5,
+        "rotate": -9.2,
     },
 }
 
@@ -164,6 +164,16 @@ class JobSpec:
     @property
     def fabric_rgb(self) -> tuple[int, int, int]:
         return FABRIC_COLORS.get(self.fabric_name, FABRIC_COLORS["Black (NRF 001)"])
+
+    @property
+    def logo_rgb(self) -> tuple[int, int, int]:
+        from utils.catalog import logo_color_rgb
+        return logo_color_rgb(self.logo_color_name)
+
+    @property
+    def logo_hex(self) -> str:
+        r, g, b = self.logo_rgb
+        return f"#{r:02X}{g:02X}{b:02X}"
 
     @property
     def client_label(self) -> str:
@@ -350,12 +360,18 @@ class MockupRenderer:
     def solid_artwork_panel(
         self,
         size: tuple[int, int],
-        fabric_rgb: tuple[int, int, int],
+        bg_rgb: tuple[int, int, int] = (244, 244, 245),
+        border_rgb: tuple[int, int, int] | None = (226, 232, 240),
     ) -> Image.Image:
-        """Edge-to-edge solid fabric swatch — no template letterbox or base bleed."""
+        """Standalone Artwork container with neutral light background (#F4F4F5)."""
         w, h = max(1, int(size[0])), max(1, int(size[1]))
-        color = tuple(int(v) for v in fabric_rgb) + (255,)
-        return Image.new("RGBA", (w, h), color)
+        color = tuple(int(v) for v in bg_rgb) + (255,)
+        panel = Image.new("RGBA", (w, h), color)
+        if border_rgb:
+            draw = ImageDraw.Draw(panel)
+            b_color = tuple(int(v) for v in border_rgb) + (255,)
+            draw.rectangle((0, 0, w - 1, h - 1), outline=b_color, width=2)
+        return panel
 
     def get_backpack_front_slot(self, fabric_name: str | None) -> dict[str, Any]:
         """Return the calibrated Front View photo logo slot for a backpack colorway."""
