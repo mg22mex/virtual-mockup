@@ -91,7 +91,7 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "box": (556.5, 930.0, 135.0, 32.0),
                 "cover": (400, 790, 400, 280),
                 "erase": "photo",
-                "rotate": -1.8,
+                "rotate": -2.5,
             },
             # Artwork callout — full plate edge-to-edge solid fabric (no letterbox bands).
             {
@@ -875,17 +875,15 @@ class WorksheetExporter:
         fabric: tuple[int, int, int],
         box: tuple[float, float, float, float] | None = None,
     ) -> None:
-        """Remove the shaded art-bound rectangle on Graphic Sample Option #1.
+        """Remove the baked sample mark on Graphic Sample Option #1 line art.
 
         Flat line-art fill already paints the bag to fabric RGB, so filling the
-        9.2 × 4.5 cm bound with the same fabric is continuous (no plate). Pale
-        glyphs outside the bound are healed into the cover.
+        9.2 × 4.5 cm bound with the same fabric is continuous (no plate). Any
+        remaining bright/white glyph pixels from the sample mark are healed
+        cleanly without contaminating surrounding ink lines or zipper pulls.
         """
         import cv2
         import numpy as np
-
-        art_box = box or cover
-        self._fill_cover(page, art_box, fabric)
 
         x, y, w, h = _pts(cover)
         x0, y0 = max(0, x), max(0, y)
@@ -893,30 +891,21 @@ class WorksheetExporter:
         if x1 - x0 < 12 or y1 - y0 < 12:
             return
         crop = np.array(page.crop((x0, y0, x1, y1)).convert("RGB"))
-        fabric_a = np.array(fabric, dtype=np.float32)
+        fabric_lum = float(np.mean(fabric))
         lum = crop.mean(axis=2).astype(np.float32)
-        chroma = crop.max(axis=2) - crop.min(axis=2)
-        pale = (lum > 120) & (chroma < 90)
-        bx, by, bw, bh = _pts(art_box)
-        ix0, iy0 = max(0, bx - x0), max(0, by - y0)
-        ix1, iy1 = min(crop.shape[1], ix0 + bw), min(crop.shape[0], iy0 + bh)
-        if ix1 > ix0 and iy1 > iy0:
-            pale[iy0:iy1, ix0:ix1] = False
-        mask = pale.astype(np.uint8) * 255
-        if int(mask.max()) == 0:
-            return
-        mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=2)
-        bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
-        healed = cv2.inpaint(bgr, mask, 4, cv2.INPAINT_TELEA)
-        out = cv2.cvtColor(healed, cv2.COLOR_BGR2RGB).astype(np.float32)
-        lum2 = out.mean(axis=2)
-        chroma2 = out.max(axis=2) - out.min(axis=2)
-        leftover = (lum2 > 135) & (chroma2 < 75)
-        if ix1 > ix0 and iy1 > iy0:
-            leftover[iy0:iy1, ix0:ix1] = False
-        if leftover.any():
-            out[leftover] = fabric_a
-        page.paste(PILImage.fromarray(np.clip(out, 0, 255).astype(np.uint8)), (x0, y0))
+
+        # Only target bright glyph pixels significantly brighter than fabric background
+        pale = lum > max(185.0, fabric_lum + 40.0)
+        mask = (pale.astype(np.uint8) * 255)
+        if int(mask.max()) > 0:
+            mask = cv2.dilate(mask, np.ones((5, 5), np.uint8), iterations=1)
+            bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+            healed = cv2.inpaint(bgr, mask, 3, cv2.INPAINT_TELEA)
+            crop = cv2.cvtColor(healed, cv2.COLOR_BGR2RGB)
+            page.paste(PILImage.fromarray(crop), (x0, y0))
+
+        art_box = box or cover
+        self._fill_cover(page, art_box, fabric)
 
     def _paint_artwork_swatch(
         self,
