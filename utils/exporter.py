@@ -88,9 +88,10 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
         "logos": [
             # Front-view photo — calibrated upper pocket panel below zipper seam.
             {
-                "box": (538.5, 922.5, 135.0, 32.0),
+                "box": (544.5, 930.0, 135.0, 32.0),
                 "cover": (400, 790, 400, 280),
                 "erase": "photo",
+                "rotate": 3.5,
             },
             # Artwork callout — full plate edge-to-edge solid fabric (no letterbox bands).
             {
@@ -563,7 +564,7 @@ class WorksheetExporter:
                     self._fill_cover(page, cover, fill)
 
         x, y, w, h = _pts(slot["box"])
-        rotate = int(slot.get("rotate") or 0)
+        rotate = float(slot.get("rotate") or 0)
         art = _trim_mark(mark.convert("RGBA"))
         # Force fully transparent backdrop — keep ink only (no dark plate in SVG).
         art = _strip_mark_backdrop(art)
