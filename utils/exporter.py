@@ -86,10 +86,10 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — calibrated upper-center placement under the main zipper.
+            # Front-view photo — calibrated upper pocket panel below zipper seam.
             {
-                "box": (538.5, 875.0, 135.0, 32.0),
-                "cover": (400, 790, 400, 220),
+                "box": (538.5, 894.5, 135.0, 32.0),
+                "cover": (400, 790, 400, 240),
                 "erase": "photo",
             },
             # Artwork callout — full plate edge-to-edge solid fabric (no letterbox bands).
