@@ -43,7 +43,7 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
         "box": (556.5, 930.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 280.0),
         "erase": "photo",
-        "rotate": -3.0,
+        "rotate": 2.5,
     },
     "steel": {
         "box": (484.0, 857.0, 130.0, 30.0),
@@ -55,7 +55,7 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
         "box": (606.0, 905.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 280.0),
         "erase": "photo",
-        "rotate": -6.5,
+        "rotate": -7.5,
     },
 }
 

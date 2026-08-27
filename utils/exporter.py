@@ -92,7 +92,7 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "box": (556.5, 930.0, 135.0, 32.0),
                 "cover": (400, 790, 400, 280),
                 "erase": "photo",
-                "rotate": -3.0,
+                "rotate": 2.5,
             },
             # Artwork callout — full plate edge-to-edge solid fabric (no letterbox bands).
             {
