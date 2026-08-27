@@ -86,9 +86,9 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
     1: {
         "size_pts": (2125.98, 3259.84),
         "logos": [
-            # Front-view photo — locked upper-center below zipper across all colorways.
+            # Front-view photo — calibrated upper compartment panel right beneath top zipper.
             {
-                "box": (518, 888, 150, 40),
+                "box": (538.5, 826.0, 125.0, 26.0),
                 "cover": (400, 790, 400, 220),
                 "erase": "photo",
             },
@@ -424,6 +424,12 @@ class WorksheetExporter:
         base = page.copy()
         try:
             spec = self._page_spec(family, page_no)
+            if family == "backpack":
+                # Dynamic front photo logo slot calibrated for Sage / Steel Blue / Black.
+                spec = {**spec, "logos": [dict(s) for s in spec["logos"]]}
+                for idx, slot in enumerate(spec["logos"]):
+                    if str(slot.get("erase") or "") == "photo":
+                        spec["logos"][idx] = self.renderer.get_backpack_front_slot(job.fabric_name)
             fabric = job.fabric_rgb
             black = FABRIC_COLORS.get("Black (NRF 001)", (30, 30, 30))
             # Photo/sleeve heals sample already-tinted fabric. Running them before

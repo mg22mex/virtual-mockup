@@ -36,6 +36,29 @@ BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
 # Artwork callout plate @ 144 DPI — full dark preview square incl. top/bottom bands.
 BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 
+# Front-view photo logo overlay slots per colorway (in 72 DPI PDF points).
+# Calibrated for upper compartment panel right beneath the top zipper.
+BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
+    "sage": {
+        "box": (538.5, 826.0, 125.0, 26.0),
+        "cover": (400.0, 790.0, 400.0, 220.0),
+        "erase": "photo",
+        "rotate": 0,
+    },
+    "steel": {
+        "box": (455.0, 736.0, 115.0, 24.0),
+        "cover": (400.0, 790.0, 400.0, 220.0),
+        "erase": "photo",
+        "rotate": -4,
+    },
+    "black": {
+        "box": (540.0, 755.0, 125.0, 26.0),
+        "cover": (400.0, 790.0, 400.0, 220.0),
+        "erase": "photo",
+        "rotate": 0,
+    },
+}
+
 NAVY = (38, 45, 101)
 HEADER_BG = (246, 245, 243)
 WHITE = (255, 255, 255)
@@ -333,6 +356,10 @@ class MockupRenderer:
         w, h = max(1, int(size[0])), max(1, int(size[1]))
         color = tuple(int(v) for v in fabric_rgb) + (255,)
         return Image.new("RGBA", (w, h), color)
+
+    def get_backpack_front_slot(self, fabric_name: str | None) -> dict[str, Any]:
+        """Return the calibrated Front View photo logo slot for a backpack colorway."""
+        return get_backpack_front_slot(fabric_name)
 
     # ----------------------------------------------------------- WM brand mark
     def weatherman_mark(self, size: int, fill: tuple[int, int, int] = WHITE, bg=NAVY) -> Image.Image:
@@ -932,6 +959,23 @@ def _punch_mask_rect(mask: Image.Image, box: tuple[int, int, int, int]) -> Image
 def _normalize_fabric_key(name: str | None) -> str:
     """Lowercase token used to match catalog names like ``Sage`` / ``Steel Blue``."""
     return " ".join(str(name or "").lower().replace("—", " ").replace("-", " ").split())
+
+
+def get_backpack_front_slot(fabric_name: str | None) -> dict[str, Any]:
+    """Return the calibrated Front View photo logo slot for a backpack colorway.
+
+    Sage: Centered relative to upper pack panel width, bounded cleanly between
+          upper zipper line and main horizontal seam (anchor moved up ~25%).
+    Steel Blue: Aligned with upper pocket area under top handle/zipper, with
+                natural -4° face tilt matching the backpack perspective.
+    Black: Aligned with upper compartment panel under top zipper.
+    """
+    key = _normalize_fabric_key(fabric_name)
+    if "steel" in key or "blue" in key:
+        return dict(BACKPACK_FRONT_OVERLAYS["steel"])
+    if "black" in key:
+        return dict(BACKPACK_FRONT_OVERLAYS["black"])
+    return dict(BACKPACK_FRONT_OVERLAYS["sage"])
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:
