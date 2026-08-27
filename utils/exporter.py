@@ -88,7 +88,7 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
         "logos": [
             # Front-view photo — calibrated upper pocket panel below zipper seam.
             {
-                "box": (544.5, 930.0, 135.0, 32.0),
+                "box": (552.0, 930.0, 135.0, 32.0),
                 "cover": (400, 790, 400, 280),
                 "erase": "photo",
                 "rotate": 3.5,

@@ -40,7 +40,7 @@ BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 # Calibrated inside the flat upper pocket panel space below the zipper seam.
 BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
     "sage": {
-        "box": (544.5, 930.0, 135.0, 32.0),
+        "box": (552.0, 930.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 280.0),
         "erase": "photo",
         "rotate": 3.5,
@@ -52,10 +52,10 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
         "rotate": -4.0,
     },
     "black": {
-        "box": (553.0, 906.0, 135.0, 32.0),
+        "box": (560.5, 906.0, 135.0, 32.0),
         "cover": (400.0, 790.0, 400.0, 280.0),
         "erase": "photo",
-        "rotate": -3.5,
+        "rotate": -5.5,
     },
 }
 
