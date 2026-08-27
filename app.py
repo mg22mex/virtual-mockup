@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 70
+STAMP_VERSION = 71
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -266,19 +266,6 @@ def _run_app() -> None:
             st.caption("Uploaded artwork colors are kept as-is.")
         elif logo_color:
             st.caption("Uploaded art is recolored to the selected print color.")
-        year = st.number_input(
-            "Worksheet year",
-            min_value=2020,
-            max_value=2040,
-            value=None,
-            step=1,
-            format="%d",
-            placeholder="Year",
-            key=f"year_{FORM_KEY}",
-        )
-        if year is not None:
-            year = int(year)
-
         ext_list = [e.lstrip(".") for e in SUPPORTED_EXTS]
         if "logo_uploader_id" not in st.session_state:
             st.session_state["logo_uploader_id"] = 0
@@ -291,6 +278,19 @@ def _run_app() -> None:
             _clear_artwork_state()
             st.session_state["logo_uploader_id"] = int(st.session_state["logo_uploader_id"]) + 1
             st.rerun()
+
+        year = st.number_input(
+            "Worksheet year",
+            min_value=2020,
+            max_value=2040,
+            value=None,
+            step=1,
+            format="%d",
+            placeholder="Year",
+            key=f"year_{FORM_KEY}",
+        )
+        if year is not None:
+            year = int(year)
 
     missing = []
     if not client.strip():
@@ -387,7 +387,6 @@ def _run_app() -> None:
 
     left, right = st.columns([2, 1], vertical_alignment="top")
     with left:
-        st.badge(job.client_label, color="gray", icon=":material/checkroom:")
         st.subheader("Production worksheet")
         with st.spinner("Updating worksheet preview…"):
             pages = _preview_pages(

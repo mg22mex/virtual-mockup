@@ -20,6 +20,7 @@ from reportlab.pdfgen import canvas
 from .catalog import fabric_sheet_lines, logo_color_rgb, style_family
 from .renderer import (
     FABRIC_COLORS,
+    HEADER_BG,
     NAVY,
     JobSpec,
     MockupRenderer,
@@ -91,7 +92,7 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "box": (556.5, 930.0, 135.0, 32.0),
                 "cover": (400, 790, 400, 280),
                 "erase": "photo",
-                "rotate": -2.5,
+                "rotate": -3.0,
             },
             # Artwork callout — full plate edge-to-edge solid fabric (no letterbox bands).
             {
@@ -109,7 +110,7 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
                 "clear_default": True,
             },
         ],
-        "chip": (1310, 60, 390, 150),
+        "chip": (1308.0, 58.0, 597.0, 155.0),
         "header_fields": {
             "request_date": (1105, 48, 160, 30),
             "last_update": (1105, 95, 160, 32),
@@ -1021,14 +1022,11 @@ class WorksheetExporter:
                 draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
                 draw.text((x, y + h * 0.5), text, font=font_meta, fill=NAVY + (255,), anchor="lm")
 
-        cx, cy, cw, ch = _pts(spec["chip"])
-        draw.rounded_rectangle((cx, cy, cx + cw, cy + ch), radius=int(6 * SCALE), fill=NAVY + (255,))
-        label = job.client.strip() or "Client"
-        config = job.panel_config or "Standard 1 Panel"
-        font_a = _font(True, int(22 * SCALE))
-        font_b = _font(False, int(18 * SCALE))
-        draw.text((cx + cw / 2, cy + ch * 0.34), label, font=font_a, fill=(255, 255, 255, 255), anchor="mm")
-        draw.text((cx + cw / 2, cy + ch * 0.66), f"({config})", font=font_b, fill=(255, 255, 255, 255), anchor="mm")
+        chip_box = spec.get("chip")
+        if chip_box:
+            cx, cy, cw, ch = _pts(chip_box)
+            # Fill with header background to remove any dark navy chip block completely
+            draw.rectangle((cx - 2, cy - 2, cx + cw + 2, cy + ch + 2), fill=HEADER_BG + (255,))
 
     def _recolor_fabric(
         self,
