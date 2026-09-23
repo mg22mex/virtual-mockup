@@ -43,62 +43,62 @@ BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
     "upper_center": {
         "sage": {
-            "box": (539.0, 922.5, 170.0, 47.0),
+            "box": (530.0, 905.0, 185.0, 52.0),
             "cover": (400.0, 790.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": 2.5,
         },
         "steel": {
-            "box": (464.0, 848.5, 170.0, 47.0),
+            "box": (455.0, 830.0, 185.0, 52.0),
             "cover": (400.0, 790.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (594.5, 897.5, 170.0, 47.0),
+            "box": (582.0, 875.0, 190.0, 54.0),
             "cover": (400.0, 790.0, 400.0, 280.0),
             "erase": "photo",
-            "rotate": -9.2,
+            "rotate": -11.0,
         },
     },
     "center": {
         "sage": {
-            "box": (539.0, 1060.0, 170.0, 47.0),
+            "box": (530.0, 1035.0, 185.0, 52.0),
             "cover": (400.0, 930.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": 2.5,
         },
         "steel": {
-            "box": (464.0, 986.0, 170.0, 47.0),
+            "box": (455.0, 960.0, 185.0, 52.0),
             "cover": (400.0, 860.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (594.5, 1035.0, 170.0, 47.0),
+            "box": (582.0, 1005.0, 190.0, 54.0),
             "cover": (400.0, 910.0, 400.0, 280.0),
             "erase": "photo",
-            "rotate": -9.2,
+            "rotate": -11.0,
         },
     },
     "lower_right_center": {
         "sage": {
-            "box": (575.0, 1185.0, 92.0, 26.0),
+            "box": (568.0, 1165.0, 108.0, 30.0),
             "cover": (480.0, 1100.0, 320.0, 220.0),
             "erase": "photo",
             "rotate": 2.0,
         },
         "steel": {
-            "box": (520.0, 1120.0, 92.0, 26.0),
+            "box": (512.0, 1100.0, 108.0, 30.0),
             "cover": (430.0, 1040.0, 320.0, 220.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (665.0, 1190.0, 92.0, 26.0),
+            "box": (648.0, 1155.0, 112.0, 32.0),
             "cover": (560.0, 1110.0, 320.0, 220.0),
             "erase": "photo",
-            "rotate": -9.2,
+            "rotate": -10.5,
         },
     },
 }
@@ -108,6 +108,35 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
     "upper_center": (1041.5, 2275.0),
     "center": (1041.5, 2480.0),
     "lower_right_center": (1125.0, 2685.0),
+}
+
+# Paula v2 dimension arrow + label anchors (PDF points) per placement.
+# h_line / v_line are hairline segments; value/caption boxes are tight text wipes.
+BACKPACK_DIM_LAYOUTS: dict[str, dict[str, Any]] = {
+    "upper_center": {
+        "h_line": (885.7, 3016.1, 1197.3, 3016.1),
+        "v_line": (1495.2, 2237.0, 1495.2, 2313.3),
+        "width_value": (986.7, 2960.3, 110.0, 44.2),
+        "width_caption": (948.0, 3023.2, 190.0, 36.0),
+        "height_value": (1439.7, 2227.0, 44.2, 96.3),
+        "height_caption": (1508.6, 2183.0, 36.0, 184.3),
+    },
+    "center": {
+        "h_line": (885.7, 3016.1, 1197.3, 3016.1),
+        "v_line": (1495.2, 2384.1, 1495.2, 2460.5),
+        "width_value": (986.7, 2960.3, 110.0, 44.2),
+        "width_caption": (948.0, 3023.2, 190.0, 36.0),
+        "height_value": (1439.7, 2374.0, 44.2, 96.3),
+        "height_caption": (1508.6, 2330.0, 36.0, 184.3),
+    },
+    "lower_right_center": {
+        "h_line": (1056.7, 3008.1, 1215.6, 3008.1),
+        "v_line": (1500.2, 2792.2, 1500.2, 2826.0),
+        "width_value": (1088.6, 2952.3, 95.0, 44.2),
+        "width_caption": (1048.0, 3015.2, 180.0, 36.0),
+        "height_value": (1444.7, 2773.4, 44.2, 72.0),
+        "height_caption": (1513.6, 2717.0, 36.0, 184.0),
+    },
 }
 
 NAVY = (38, 45, 101)
@@ -1077,6 +1106,15 @@ def backpack_artwork_cm(placement: str | None = None) -> tuple[float, float]:
 
     place = resolve_backpack_placement(placement)
     return float(place["width_cm"]), float(place["height_cm"])
+
+
+def backpack_dim_layout(placement: str | None = None) -> dict[str, Any]:
+    """Paula v2 hairline arrow + label anchors for the active placement."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    key = str(place.get("key") or "upper_center")
+    return dict(BACKPACK_DIM_LAYOUTS.get(key) or BACKPACK_DIM_LAYOUTS["upper_center"])
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:

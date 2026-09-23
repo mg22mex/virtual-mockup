@@ -105,6 +105,23 @@ def fabric_sheet_lines(name: str) -> list[str]:
     return lines
 
 
+def fabric_sheet_label(name: str) -> str:
+    """Single-line Fabric Colors label matching Paula sheets (no Pantone sub-line)."""
+    return fabric_sheet_lines(name)[0]
+
+
+def logo_sheet_label(name: str) -> str:
+    """Short Logo/Graphic Colors label — Paula sheets use White / Black."""
+    token = " ".join(str(name or "").lower().replace("-", " ").split())
+    if "white" in token:
+        return "White"
+    if "black" in token:
+        return "Black"
+    if "match uploaded" in token:
+        return "Match art"
+    return str(name or "").strip() or "—"
+
+
 def logo_color_record(name: str) -> dict[str, Any]:
     for item in load_catalog()["logo_colors"]:
         if item["name"] == name:

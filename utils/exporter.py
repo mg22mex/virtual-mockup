@@ -20,8 +20,10 @@ from reportlab.pdfgen import canvas
 from .catalog import (
     artwork_preview_bg,
     backpack_option_label,
+    fabric_sheet_label,
     fabric_sheet_lines,
     logo_color_rgb,
+    logo_sheet_label,
     resolve_backpack_placement,
     style_family,
 )
@@ -32,6 +34,7 @@ from .renderer import (
     JobSpec,
     MockupRenderer,
     backpack_artwork_cm,
+    backpack_dim_layout,
     backpack_draw_center,
     fit_logo_uniform,
 )
@@ -122,19 +125,20 @@ BACKPACK_PAGE_SPEC: dict[int, dict] = {
         ],
         "chip": (1308.0, 58.0, 597.0, 155.0),
         "header_fields": {
-            "request_date": (1105, 48, 160, 30),
-            "last_update": (1105, 95, 160, 32),
-            "project_owner": (1105, 143, 160, 32),
-            "print_order": (1105, 190, 160, 32),
+            "request_date": (1105, 42, 195, 42),
+            "last_update": (1105, 90, 195, 42),
+            "project_owner": (1105, 138, 195, 42),
+            "print_order": (1105, 186, 195, 42),
         },
         # Higher lum unused for backpack (mask path); kept for umbrella parity docs.
         "recolor_masks": True,
         "colors": {
-            "logo_swatch": (56, 2068, 90, 48),
-            "logo_label": (155, 2065, 300, 54),
-            "fabric_swatch": (56, 1890, 90, 48),
-            "fabric_label": (155, 1888, 300, 52),
-            "font_pt": 16,
+            "logo_swatch": (56, 2060, 90, 56),
+            "logo_label": (160, 2055, 420, 66),
+            "fabric_swatch": (56, 1882, 90, 56),
+            "fabric_label": (160, 1876, 420, 66),
+            "font_pt": 32,
+            "font_bold": True,
         },
     },
 }
@@ -492,17 +496,13 @@ class WorksheetExporter:
                             "cover": draw_cover if needs_upper_clear else upper_cover,
                             "extra_covers": covers,
                         }
-                # Dimension + option callouts — fixed Paula v2 worksheet anchors (off-bag).
+                # Dimension + option callouts — Paula v2 anchors (placement-aware).
                 option_tag = backpack_option_label(place_key, job.fabric_name)
+                dim_layout = backpack_dim_layout(place_key)
                 spec["dim_labels"] = {
-                    # Vertical height value + caption (rotated text, right of line art).
-                    "height_value": (1439.7, 2227.0, 44.2, 96.3),
-                    "height_caption": (1508.6, 2183.0, 36.0, 184.3),
-                    # Horizontal width value + caption (below bag).
-                    "width_value": (986.7, 2960.3, 110.0, 44.2),
-                    "width_caption": (953.4, 3023.2, 176.3, 36.0),
-                    "note": (1650.0, 1908.0, 380.0, 60.0),
-                    "place_label": (1650.0, 1960.0, 360.0, 62.0),
+                    **dim_layout,
+                    "note": (1650.0, 1908.0, 420.0, 60.0),
+                    "place_label": (1650.0, 1960.0, 420.0, 62.0),
                     "option": (1670.0, 1729.0, 400.0, 106.0),
                     "option_tag": option_tag,
                 }
@@ -1107,9 +1107,15 @@ class WorksheetExporter:
         if max(logo_rgb) > 210:
             draw.rectangle((lx, ly, lx + lw, ly + lh), outline=outline, width=stroke)
 
-        font = _font(False, int(colors.get("font_pt", 14) * SCALE))
-        self._stamp_label(draw, colors["fabric_label"], fabric_sheet_lines(job.fabric_name), font)
-        self._stamp_label(draw, colors["logo_label"], [job.logo_color_name], font)
+        bold = bool(colors.get("font_bold", False))
+        font = _font(bold, int(colors.get("font_pt", 14) * SCALE))
+        # Backpack Paula sheets: single-line fabric + short logo label at large type.
+        if bool(colors.get("font_bold")) or int(colors.get("font_pt", 14)) >= 28:
+            self._stamp_label(draw, colors["fabric_label"], [fabric_sheet_label(job.fabric_name)], font)
+            self._stamp_label(draw, colors["logo_label"], [logo_sheet_label(job.logo_color_name)], font)
+        else:
+            self._stamp_label(draw, colors["fabric_label"], fabric_sheet_lines(job.fabric_name), font)
+            self._stamp_label(draw, colors["logo_label"], [job.logo_color_name], font)
 
     def _stamp_label(
         self,
@@ -1137,7 +1143,7 @@ class WorksheetExporter:
         draw = ImageDraw.Draw(page)
         fields = spec.get("header_fields") or {}
         if fields:
-            font_meta = _font(False, int(16 * SCALE))
+            font_meta = _font(False, int(30 * SCALE))
             values = {
                 "request_date": job.request_date or "—",
                 "last_update": job.last_update or "—",
@@ -1150,13 +1156,28 @@ class WorksheetExporter:
                     text = "—"
                 x, y, w, h = _pts(box)
                 draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-                draw.text((x, y + h * 0.5), text, font=font_meta, fill=NAVY + (255,), anchor="lm")
+                # Uniform vertical padding — center on field midline.
+                draw.text((x + int(4 * SCALE), y + h * 0.5), text, font=font_meta, fill=NAVY + (255,), anchor="lm")
 
         chip_box = spec.get("chip")
         if chip_box:
             cx, cy, cw, ch = _pts(chip_box)
-            # Fill with header background to remove any dark navy chip block completely
-            draw.rectangle((cx - 2, cy - 2, cx + cw + 2, cy + ch + 2), fill=HEADER_BG + (255,))
+            family = self._job_family(job) if hasattr(job, "family") else "umbrella"
+            if family == "backpack":
+                # Paula navy project chip: "Proper Brands 2026"
+                draw.rectangle((cx, cy, cx + cw, cy + ch), fill=NAVY + (255,))
+                chip_font = _font(False, int(34 * SCALE))
+                label = f"{(job.client or 'Client').strip()} {job.year}"
+                draw.text(
+                    (cx + int(24 * SCALE), cy + ch * 0.52),
+                    label,
+                    font=chip_font,
+                    fill=(255, 255, 255, 255),
+                    anchor="lm",
+                )
+            else:
+                # Umbrella: clear sample chip into header ground.
+                draw.rectangle((cx - 2, cy - 2, cx + cw + 2, cy + ch + 2), fill=HEADER_BG + (255,))
 
     def _paste_rotated_label(
         self,
@@ -1190,45 +1211,89 @@ class WorksheetExporter:
         py = y + max(0, (h - rot.height) // 2)
         page.paste(rot, (px, py), rot)
 
+    @staticmethod
+    def _fmt_cm(value: float) -> str:
+        """Match Paula copy: whole centimeters drop the decimal (``2 cm``)."""
+        if abs(float(value) - round(float(value))) < 0.05:
+            return f"{int(round(float(value)))} cm"
+        return f"{float(value):.1f} cm"
+
+    def _draw_hairline_arrow(
+        self,
+        draw: ImageDraw.ImageDraw,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        *,
+        color: tuple[int, int, int, int] = NAVY + (255,),
+    ) -> None:
+        """Crisp 2 pt hairline with small triangular heads (Paula v2 proportions)."""
+        px0, py0 = _pt_xy(x0, y0)
+        px1, py1 = _pt_xy(x1, y1)
+        stroke = max(2, int(round(2.0 * SCALE)))
+        head = max(6, int(round(8.0 * SCALE)))
+        half = max(3, head // 2)
+        draw.line([(px0, py0), (px1, py1)], fill=color, width=stroke)
+        if abs(px1 - px0) >= abs(py1 - py0):
+            # Horizontal
+            left, right = (px0, px1) if px0 <= px1 else (px1, px0)
+            y = py0
+            draw.polygon([(left, y), (left + head, y - half), (left + head, y + half)], fill=color)
+            draw.polygon([(right, y), (right - head, y - half), (right - head, y + half)], fill=color)
+        else:
+            # Vertical
+            top, bottom = (py0, py1) if py0 <= py1 else (py1, py0)
+            x = px0
+            draw.polygon([(x, top), (x - half, top + head), (x + half, top + head)], fill=color)
+            draw.polygon([(x, bottom), (x - half, bottom - head), (x + half, bottom - head)], fill=color)
+
     def _stamp_backpack_dims(
         self,
         page: PILImage.Image,
         spec: dict,
         job: JobSpec,
     ) -> None:
-        """Overwrite baked dimension callouts at fixed Paula v2 margin anchors."""
+        """Wipe baked callouts, redraw Paula hairlines, stamp placement-aware labels."""
         labels = spec.get("dim_labels") or {}
         if not labels:
             return
         place = spec.get("placement") or resolve_backpack_placement(job.panel_config)
+        place_key = str(place.get("key") or "upper_center")
         art_w, art_h = spec.get("artwork_cm") or (
             float(place["width_cm"]),
             float(place["height_cm"]),
         )
         draw = ImageDraw.Draw(page)
         fill = NAVY + (255,)
-        font = _font(False, int(15 * SCALE))
-        font_sm = _font(False, int(12 * SCALE))
-        w_txt = f"{art_w:.1f} cm"
-        h_txt = f"{art_h:.1f} cm"
+        caption_fill = (110, 110, 118, 255)  # charcoal-gray like Roboto-Thin captions
+        note_fill = (70, 70, 78, 255)
+        font = _font(True, int(30 * SCALE))  # ~Barlow-Medium 34
+        font_sm = _font(False, int(22 * SCALE))  # ~Roboto-Thin 27
+        w_txt = self._fmt_cm(art_w)
+        h_txt = self._fmt_cm(art_h)
 
-        # Vertical height value + caption (right of line art) — tight wipe only.
+        # Wipe only margin strips — never the bag body.
+        for wipe_box in (
+            (850.0, 2935.0, 420.0, 140.0),   # horizontal arrow + captions
+            (1410.0, 2160.0, 170.0, 780.0),  # vertical arrow + captions (all placements)
+            labels.get("wipe_extra"),
+        ):
+            if not wipe_box:
+                continue
+            x, y, w, h = _pts(wipe_box)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+
+        h_line = labels.get("h_line")
+        if h_line and len(h_line) == 4:
+            self._draw_hairline_arrow(draw, h_line[0], h_line[1], h_line[2], h_line[3], color=fill)
+        v_line = labels.get("v_line")
+        if v_line and len(v_line) == 4:
+            self._draw_hairline_arrow(draw, v_line[0], v_line[1], v_line[2], v_line[3], color=fill)
+
         height_value = labels.get("height_value")
         if height_value:
             self._paste_rotated_label(page, height_value, h_txt, font, fill, angle=90.0)
-        else:
-            height_box = labels.get("height")
-            if height_box:
-                x, y, w, h = _pts(height_box)
-                draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-                draw.text((x + w * 0.55, y + h * 0.35), h_txt, font=font, fill=fill, anchor="mm")
-                draw.text(
-                    (x + w * 0.55, y + h * 0.72),
-                    "(artwork height)",
-                    font=font_sm,
-                    fill=fill,
-                    anchor="mm",
-                )
 
         height_caption = labels.get("height_caption")
         if height_caption:
@@ -1237,7 +1302,7 @@ class WorksheetExporter:
                 height_caption,
                 "(artwork height)",
                 font_sm,
-                fill,
+                caption_fill,
                 angle=90.0,
             )
 
@@ -1246,18 +1311,6 @@ class WorksheetExporter:
             x, y, w, h = _pts(width_value)
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
             draw.text((x + w * 0.5, y + h * 0.5), w_txt, font=font, fill=fill, anchor="mm")
-        else:
-            width_box = labels.get("width")
-            if width_box:
-                x, y, w, h = _pts(width_box)
-                draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-                draw.text(
-                    (x + w * 0.5, y + h * 0.5),
-                    f"{w_txt}  (artwork width)",
-                    font=font,
-                    fill=fill,
-                    anchor="mm",
-                )
 
         width_caption = labels.get("width_caption")
         if width_caption:
@@ -1267,7 +1320,7 @@ class WorksheetExporter:
                 (x + w * 0.5, y + h * 0.5),
                 "(artwork width)",
                 font=font_sm,
-                fill=fill,
+                fill=caption_fill,
                 anchor="mm",
             )
 
@@ -1275,12 +1328,12 @@ class WorksheetExporter:
         if note_box:
             x, y, w, h = _pts(note_box)
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-            label = str(place.get("label") or "Upper center")
+            font_note = _font(False, int(36 * SCALE))
             draw.text(
                 (x, y + h * 0.5),
-                f"*artwork on the {label.lower()}",
-                font=font_sm,
-                fill=fill,
+                "*artwork on the",
+                font=font_note,
+                fill=note_fill,
                 anchor="lm",
             )
 
@@ -1289,12 +1342,12 @@ class WorksheetExporter:
             x, y, w, h = _pts(place_label_box)
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
             label = str(place.get("label") or "Upper center")
-            font_place = _font(True, int(22 * SCALE))
+            font_place = _font(False, int(36 * SCALE))
             draw.text(
                 (x, y + h * 0.5),
                 label.lower(),
                 font=font_place,
-                fill=fill,
+                fill=note_fill,
                 anchor="lm",
             )
 
@@ -1304,14 +1357,10 @@ class WorksheetExporter:
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
             tag = str(labels.get("option_tag") or "").strip()
             if not tag:
-                tag = backpack_option_label(
-                    str(place.get("key") or "upper_center"),
-                    job.fabric_name,
-                )
-            # Paula sheets use "Option #4" style; accept "#4" or "4".
+                tag = backpack_option_label(place_key, job.fabric_name)
             if tag and not tag.lower().startswith("option"):
                 tag = f"Option {tag}" if tag.startswith("#") else f"Option #{tag}"
-            font_opt = _font(True, int(28 * SCALE))
+            font_opt = _font(True, int(64 * SCALE))
             draw.text(
                 (x + w, y + h * 0.55),
                 tag or "Option #1",
