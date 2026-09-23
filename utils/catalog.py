@@ -116,3 +116,58 @@ def logo_color_rgb(name: str) -> tuple[int, int, int]:
     rec = logo_color_record(name)
     rgb = rec.get("rgb") or [255, 255, 255]
     return int(rgb[0]), int(rgb[1]), int(rgb[2])
+
+
+def backpack_placements(product_key: str = "venture_dry_pack") -> dict[str, dict[str, Any]]:
+    """Placement modes for Venture Dry Pack (Style #: 40002) and siblings."""
+    spec = product_specs().get(product_key) or {}
+    raw = spec.get("placements") or {}
+    out: dict[str, dict[str, Any]] = {}
+    for key, rec in raw.items():
+        out[str(key)] = dict(rec)
+    return out
+
+
+def backpack_placement_labels(product_key: str = "venture_dry_pack") -> dict[str, str]:
+    """Map placement key → UI label."""
+    return {
+        key: str(rec.get("label") or key.replace("_", " ").title())
+        for key, rec in backpack_placements(product_key).items()
+    }
+
+
+def resolve_backpack_placement(
+    panel_config: str | None,
+    product_key: str = "venture_dry_pack",
+) -> dict[str, Any]:
+    """Resolve a panel_config label/key to placement dims for Style #: 40002."""
+    placements = backpack_placements(product_key)
+    default_key = str(
+        (product_specs().get(product_key) or {}).get("default_placement") or "upper_center"
+    )
+    token = " ".join(str(panel_config or "").lower().replace("-", " ").split())
+    key = default_key
+    if token in placements:
+        key = token
+    else:
+        for cand, rec in placements.items():
+            label = str(rec.get("label") or "").lower()
+            if token and (token == label or token in label or label in token):
+                key = cand
+                break
+        if "lower" in token or "right" in token:
+            key = "lower_right_center" if "lower_right_center" in placements else key
+        elif "upper" in token:
+            key = "upper_center" if "upper_center" in placements else key
+    rec = dict(placements.get(key) or placements.get(default_key) or {})
+    if not rec:
+        rec = {
+            "label": "Upper center",
+            "width_cm": 13.3,
+            "height_cm": 3.7,
+        }
+    rec["key"] = key if key in placements else default_key
+    rec.setdefault("label", key.replace("_", " ").title())
+    rec.setdefault("width_cm", 13.3)
+    rec.setdefault("height_cm", 3.7)
+    return rec

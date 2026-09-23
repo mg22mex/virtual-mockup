@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 75
+STAMP_VERSION = 76
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -45,10 +45,12 @@ try:
     from skills.asset_logger import AssetLogger
     from skills.state_memory import StateMemory
     from utils.catalog import (
+        backpack_placement_labels,
         fabric_caption,
         fabrics_for_styles,
         logo_color_names,
         logo_knockout_mode,
+        resolve_backpack_placement,
         style_labels,
     )
     from utils.exporter import WorksheetExporter, worksheet_filename
@@ -214,9 +216,22 @@ def _run_app() -> None:
             product_keys = [label_to_key[label] for label in selected_labels]
 
             if family == "backpack":
-                panel_config = "Upper center"
+                place_labels = backpack_placement_labels("venture_dry_pack")
+                place_options = list(place_labels.values()) or ["Upper center"]
+                panel_config = st.selectbox(
+                    "Artwork placement",
+                    place_options,
+                    index=None,
+                    placeholder="Choose placement",
+                    key=f"backpack_place_{FORM_KEY}",
+                )
                 panel_count = 1
-                st.caption("Artwork placement: upper center · 9.2 × 4.5 cm.")
+                if panel_config:
+                    place = resolve_backpack_placement(panel_config)
+                    st.caption(
+                        f"{place['label']} · {place['width_cm']:g} × {place['height_cm']:g} cm "
+                        f"(Style #: 40002)."
+                    )
             else:
                 panel_config = st.selectbox(
                     "Panel configuration",
@@ -303,6 +318,8 @@ def _run_app() -> None:
         missing.append("products")
     if family == "umbrella" and not panel_config:
         missing.append("panel configuration")
+    if family == "backpack" and not panel_config:
+        missing.append("artwork placement")
     if not fabric:
         missing.append("fabric")
     if not logo_color:
@@ -426,8 +443,14 @@ def _run_app() -> None:
             f"**File:** `{worksheet_filename(job.client, job.year, job.family)}`  \n"
             f"**Fabric:** {fabric_caption(job.fabric_name)}  \n"
             f"**Logo:** {job.logo_color_name}  \n"
-            f"**Placement:** {panel_config}  \n"
-            f"**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
+            f"**Placement:** {panel_config}"
+            + (
+                f" · {resolve_backpack_placement(panel_config)['width_cm']:g} × "
+                f"{resolve_backpack_placement(panel_config)['height_cm']:g} cm"
+                if family == "backpack" and panel_config
+                else ""
+            )
+            + f"  \n**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
         )
         if not logo:
             st.caption("No upload yet — Generate exports the worksheet with logo slots cleared.")

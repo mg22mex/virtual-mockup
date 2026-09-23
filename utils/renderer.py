@@ -36,27 +36,56 @@ BACKPACK_FRONT_BOX = (457, 1181, 1664, 1702)  # x, y, w, h
 # Artwork callout plate @ 144 DPI — full dark preview square incl. top/bottom bands.
 BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 
-# Front-view photo logo overlay slots per colorway (in 72 DPI PDF points).
-# Calibrated inside the flat upper pocket panel space below the zipper seam.
-BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, Any]] = {
-    "sage": {
-        "box": (556.5, 930.0, 135.0, 32.0),
-        "cover": (400.0, 790.0, 400.0, 280.0),
-        "erase": "photo",
-        "rotate": 2.5,
+# Front-view photo logo overlay slots per placement × colorway (72 DPI PDF points).
+# upper_center: Options #1–#3 · 13.3 × 3.7 cm
+# lower_right_center: Options #7–#9 · 7.2 × 2.0 cm (adjacent to Weatherman mark)
+BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
+    "upper_center": {
+        "sage": {
+            "box": (539.0, 922.5, 170.0, 47.0),
+            "cover": (400.0, 790.0, 400.0, 280.0),
+            "erase": "photo",
+            "rotate": 2.5,
+        },
+        "steel": {
+            "box": (464.0, 848.5, 170.0, 47.0),
+            "cover": (400.0, 790.0, 400.0, 280.0),
+            "erase": "photo",
+            "rotate": -4.0,
+        },
+        "black": {
+            "box": (594.5, 897.5, 170.0, 47.0),
+            "cover": (400.0, 790.0, 400.0, 280.0),
+            "erase": "photo",
+            "rotate": -9.2,
+        },
     },
-    "steel": {
-        "box": (484.0, 857.0, 130.0, 30.0),
-        "cover": (400.0, 790.0, 400.0, 280.0),
-        "erase": "photo",
-        "rotate": -4.0,
+    "lower_right_center": {
+        "sage": {
+            "box": (575.0, 1185.0, 92.0, 26.0),
+            "cover": (480.0, 1100.0, 320.0, 220.0),
+            "erase": "photo",
+            "rotate": 2.0,
+        },
+        "steel": {
+            "box": (520.0, 1120.0, 92.0, 26.0),
+            "cover": (430.0, 1040.0, 320.0, 220.0),
+            "erase": "photo",
+            "rotate": -4.0,
+        },
+        "black": {
+            "box": (665.0, 1190.0, 92.0, 26.0),
+            "cover": (560.0, 1110.0, 320.0, 220.0),
+            "erase": "photo",
+            "rotate": -9.2,
+        },
     },
-    "black": {
-        "box": (612.0, 905.0, 135.0, 32.0),
-        "cover": (400.0, 790.0, 400.0, 280.0),
-        "erase": "photo",
-        "rotate": -9.2,
-    },
+}
+
+# Graphic Sample line-art stamp anchors (PDF points) per placement.
+BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
+    "upper_center": (1041.5, 2275.0),
+    "lower_right_center": (1125.0, 2685.0),
 }
 
 NAVY = (38, 45, 101)
@@ -373,9 +402,13 @@ class MockupRenderer:
             draw.rectangle((0, 0, w - 1, h - 1), outline=b_color, width=2)
         return panel
 
-    def get_backpack_front_slot(self, fabric_name: str | None) -> dict[str, Any]:
-        """Return the calibrated Front View photo logo slot for a backpack colorway."""
-        return get_backpack_front_slot(fabric_name)
+    def get_backpack_front_slot(
+        self,
+        fabric_name: str | None,
+        placement: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the calibrated Front View photo logo slot for placement × colorway."""
+        return get_backpack_front_slot(fabric_name, placement)
 
     # ----------------------------------------------------------- WM brand mark
     def weatherman_mark(self, size: int, fill: tuple[int, int, int] = WHITE, bg=NAVY) -> Image.Image:
@@ -977,21 +1010,46 @@ def _normalize_fabric_key(name: str | None) -> str:
     return " ".join(str(name or "").lower().replace("—", " ").replace("-", " ").split())
 
 
-def get_backpack_front_slot(fabric_name: str | None) -> dict[str, Any]:
-    """Return the calibrated Front View photo logo slot for a backpack colorway.
+def get_backpack_front_slot(
+    fabric_name: str | None,
+    placement: str | None = None,
+) -> dict[str, Any]:
+    """Return the calibrated Front View photo logo slot for placement × colorway.
 
-    Sage: Centered relative to upper pack panel width, bounded cleanly between
-          upper zipper line and main horizontal seam (anchor moved up ~25%).
-    Steel Blue: Aligned with upper pocket area under top handle/zipper, with
-                natural -4° face tilt matching the backpack perspective.
-    Black: Aligned with upper compartment panel under top zipper.
+    Placement modes (Style #: 40002):
+      upper_center — Options #1–#3 · 13.3 × 3.7 cm under top zipper
+      lower_right_center — Options #7–#9 · 7.2 × 2.0 cm adjacent to Weatherman mark
     """
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    place_key = str(place.get("key") or "upper_center")
+    by_color = BACKPACK_FRONT_OVERLAYS.get(place_key) or BACKPACK_FRONT_OVERLAYS["upper_center"]
     key = _normalize_fabric_key(fabric_name)
-    if "steel" in key or "blue" in key:
-        return dict(BACKPACK_FRONT_OVERLAYS["steel"])
-    if "black" in key:
-        return dict(BACKPACK_FRONT_OVERLAYS["black"])
-    return dict(BACKPACK_FRONT_OVERLAYS["sage"])
+    if "steel" in key:
+        slot = by_color.get("steel") or by_color.get("sage")
+    elif "black" in key:
+        slot = by_color.get("black") or by_color.get("sage")
+    else:
+        slot = by_color.get("sage") or next(iter(by_color.values()))
+    return dict(slot)
+
+
+def backpack_draw_center(placement: str | None = None) -> tuple[float, float]:
+    """PDF-point center for Graphic Sample Option #1 artwork stamp."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    key = str(place.get("key") or "upper_center")
+    return BACKPACK_DRAW_CENTERS.get(key, BACKPACK_DRAW_CENTERS["upper_center"])
+
+
+def backpack_artwork_cm(placement: str | None = None) -> tuple[float, float]:
+    """Return (width_cm, height_cm) for the active Venture Dry Pack placement."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    return float(place["width_cm"]), float(place["height_cm"])
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:

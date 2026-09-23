@@ -5,6 +5,7 @@
     "Google Drive: Oct–Dec 2026 Color Availability Analysis",
     "Local: Projects/Color analysis (NRF SKUs, core/fashion tags)",
     "Production worksheet: Proper Brands x WM Umbrella 2026 Mockup Designs.pdf",
+    "Production worksheet: Proper Brands x WM Umbrella 2026 Mockup Designs v2.pdf (Venture Dry Pack 40002 placements)",
     "Production worksheet: M13-Backpack-custom-mockup-options.pdf (Venture Dry Pack 40002)",
     "Shopify Admin: Venture Dry Pack (Accessories), Trail Hound Rain Vest (Apparel / poncho tag)"
   ],
@@ -213,10 +214,31 @@
       "canopy_panels": 1,
       "opening": "—",
       "page_size_pts": [2125.98, 3259.84],
-      "artwork_width_cm": 9.2,
-      "artwork_height_cm": 4.5,
+      "default_placement": "upper_center",
+      "placements": {
+        "upper_center": {
+          "label": "Upper center",
+          "width_cm": 13.3,
+          "height_cm": 3.7,
+          "options": ["#1", "#2", "#3"],
+          "note": "Upper center front panel · White logo"
+        },
+        "lower_right_center": {
+          "label": "Lower right center",
+          "width_cm": 7.2,
+          "height_cm": 2.0,
+          "options": ["#7", "#8", "#9"],
+          "note": "Bottom right-center front panel · adjacent to Weatherman mark · White logo"
+        }
+      },
+      "artwork_width_cm": 13.3,
+      "artwork_height_cm": 3.7,
       "placement": "Upper center",
-      "features": ["Upper-center front panel artwork", "9.2 × 4.5 cm"],
+      "features": [
+        "Upper center front panel artwork · 13.3 × 3.7 cm (Options #1–#3)",
+        "Lower right center front panel artwork · 7.2 × 2.0 cm (Options #7–#9)",
+        "Colorways: Black (NRF 001), Steel Blue (NRF 421), Sage (NRF 310)"
+      ],
       "core_colors": ["Black (NRF 001)", "Sage", "Steel Blue"],
       "all_colors": ["Black (NRF 001)", "Sage", "Steel Blue"]
     }

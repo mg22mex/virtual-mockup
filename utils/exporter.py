@@ -17,13 +17,15 @@ from PIL import ImageDraw, ImageFont
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from .catalog import fabric_sheet_lines, logo_color_rgb, style_family
+from .catalog import fabric_sheet_lines, logo_color_rgb, resolve_backpack_placement, style_family
 from .renderer import (
     FABRIC_COLORS,
     HEADER_BG,
     NAVY,
     JobSpec,
     MockupRenderer,
+    backpack_artwork_cm,
+    backpack_draw_center,
     fit_logo_uniform,
 )
 
@@ -74,13 +76,14 @@ def _cm_box(center_x: float, center_y: float, width_cm: float, height_cm: float)
     return (center_x - w / 2.0, center_y - h / 2.0, w, h)
 
 
-# Venture Dry Pack artwork bounds: 9.2 × 4.5 cm on the line drawing (M13 anchor).
-_BACKPACK_ART_W_CM = 9.2
-_BACKPACK_ART_H_CM = 4.5
-_BACKPACK_DRAW_CENTER = (1041.5, 2275.0)
+# Venture Dry Pack artwork bounds — defaults to upper_center (Options #1–#3).
+# Active placement dims are resolved per job in _compose_page.
+_BACKPACK_ART_W_CM = 13.3
+_BACKPACK_ART_H_CM = 3.7
+_BACKPACK_DRAW_CENTER = backpack_draw_center("upper_center")
 _BACKPACK_DRAW_BOX = _cm_box(*_BACKPACK_DRAW_CENTER, _BACKPACK_ART_W_CM, _BACKPACK_ART_H_CM)
 _dx, _dy, _dw, _dh = _BACKPACK_DRAW_BOX
-# Generous cover so the sample M13 (wider than the 9.2×4.5 art bound) is fully cleared.
+# Generous cover so baked sample marks are fully cleared for either placement.
 _BACKPACK_DRAW_COVER = (_dx - 55.0, _dy - 45.0, _dw + 110.0, _dh + 90.0)
 
 BACKPACK_PAGE_SPEC: dict[int, dict] = {
@@ -434,11 +437,63 @@ class WorksheetExporter:
         try:
             spec = self._page_spec(family, page_no)
             if family == "backpack":
-                # Dynamic front photo logo slot calibrated for Sage / Steel Blue / Black.
+                # Dynamic front photo + line-art slots for placement × colorway.
                 spec = {**spec, "logos": [dict(s) for s in spec["logos"]]}
+                place = resolve_backpack_placement(job.panel_config)
+                place_key = str(place.get("key") or "upper_center")
+                art_w, art_h = backpack_artwork_cm(place_key)
+                center = backpack_draw_center(place_key)
+                draw_box = _cm_box(*center, art_w, art_h)
+                dx, dy, dw, dh = draw_box
+                draw_cover = (dx - 70.0, dy - 55.0, dw + 140.0, dh + 110.0)
+                # Always wipe the baked upper-center sample mark (M13 / Proper).
+                upper_center = backpack_draw_center("upper_center")
+                upper_box = _cm_box(*upper_center, 13.3, 3.7)
+                ux, uy, uw, uh = upper_box
+                upper_cover = (ux - 80.0, uy - 60.0, uw + 160.0, uh + 120.0)
                 for idx, slot in enumerate(spec["logos"]):
-                    if str(slot.get("erase") or "") == "photo":
-                        spec["logos"][idx] = self.renderer.get_backpack_front_slot(job.fabric_name)
+                    erase = str(slot.get("erase") or "")
+                    if erase == "photo":
+                        front = self.renderer.get_backpack_front_slot(
+                            job.fabric_name,
+                            place_key,
+                        )
+                        # Lower placement must also heal the upper photo sample mark.
+                        if place_key == "lower_right_center":
+                            upper_front = self.renderer.get_backpack_front_slot(
+                                job.fabric_name,
+                                "upper_center",
+                            )
+                            # Prefer tight logo box for soft inpaint (Sage/Steel);
+                            # Black blanking can use the broader cover.
+                            upper_heal = upper_front.get("box") or upper_front.get("cover")
+                            if "black" in " ".join(str(job.fabric_name or "").lower().split()):
+                                upper_heal = upper_front.get("cover") or upper_heal
+                            front = {
+                                **front,
+                                "extra_covers": [upper_heal] if upper_heal else [],
+                            }
+                        spec["logos"][idx] = front
+                    elif slot.get("clear_default"):
+                        covers = [upper_cover]
+                        if place_key == "lower_right_center":
+                            covers.append(draw_cover)
+                        spec["logos"][idx] = {
+                            **slot,
+                            "box": draw_box,
+                            "cover": draw_cover if place_key == "lower_right_center" else upper_cover,
+                            "extra_covers": covers,
+                        }
+                # Dimension callouts track the active art bound.
+                hx = dx + dw + 18.0
+                hy = dy - 10.0
+                spec["dim_labels"] = {
+                    "height": (hx, hy, 100.0, max(120.0, dh + 40.0)),
+                    "width": (dx - 20.0, dy + dh + 12.0, max(220.0, dw + 40.0), 42.0),
+                    "note": (118.0, 2548.0, 480.0, 36.0),
+                }
+                spec["placement"] = place
+                spec["artwork_cm"] = (art_w, art_h)
             fabric = job.fabric_rgb
             black = FABRIC_COLORS.get("Black (NRF 001)", (30, 30, 30))
             # Photo/sleeve heals sample already-tinted fabric. Running them before
@@ -492,26 +547,46 @@ class WorksheetExporter:
                     continue
                 self._erase_slot(page, slot, fabric)
             # Always wipe backpack default marks on line art — even with no upload.
+            # Photo slots: heal cover + any extra_covers (e.g. upper mark when using lower).
             if family == "backpack":
                 for slot in spec["logos"]:
                     erase = str(slot.get("erase") or "")
-                    cover = slot.get("cover") or slot.get("box")
-                    if not cover:
+                    covers: list = []
+                    primary = slot.get("cover") or slot.get("box")
+                    if primary:
+                        covers.append(primary)
+                    for extra in slot.get("extra_covers") or []:
+                        if extra and extra not in covers:
+                            covers.append(extra)
+                    if not covers:
                         continue
                     if slot.get("clear_default"):
-                        self._clear_lineart_logo_zone(
-                            page,
-                            cover,
-                            fabric,
-                            box=slot.get("box"),
-                        )
-                    elif erase == "photo" and "black" in fabric_key:
-                        self._blank_photo_logo_zone(page, cover, fabric)
+                        # Clear every residual sample zone, stamp only into slot["box"].
+                        for cov in covers:
+                            self._clear_lineart_logo_zone(
+                                page,
+                                cov,
+                                fabric,
+                                box=None if cov != primary else slot.get("box"),
+                            )
+                    elif erase == "photo":
+                        if "black" in fabric_key:
+                            for cov in covers:
+                                self._blank_photo_logo_zone(page, cov, fabric)
+                        else:
+                            # Sage/Steel native SKU photos: never wipe the broad
+                            # primary cover (destroys fabric). Soft-heal only the
+                            # tight upper sample box when switching to lower placement.
+                            for cov in slot.get("extra_covers") or []:
+                                if cov:
+                                    self._inpaint_cover(page, cov)
             if mark is not None:
                 for slot in spec["logos"]:
                     self._stamp_logo(page, slot, mark, fabric, erase=False)
             self._stamp_colors(page, spec, job)
             self._stamp_header(page, spec, job)
+            if family == "backpack":
+                self._stamp_backpack_dims(page, spec, job)
             return page
         except Exception:
             print("Exporter Error:", traceback.format_exc(), flush=True)
@@ -907,7 +982,7 @@ class WorksheetExporter:
         """Remove the baked sample mark on Graphic Sample Option #1 line art.
 
         Flat line-art fill already paints the bag to fabric RGB, so filling the
-        9.2 × 4.5 cm bound with the same fabric is continuous (no plate). Any
+        placement art bound with the same fabric is continuous (no plate). Any
         remaining bright/white glyph pixels from the sample mark are healed
         cleanly without contaminating surrounding ink lines or zipper pulls.
         """
@@ -1052,6 +1127,71 @@ class WorksheetExporter:
             cx, cy, cw, ch = _pts(chip_box)
             # Fill with header background to remove any dark navy chip block completely
             draw.rectangle((cx - 2, cy - 2, cx + cw + 2, cy + ch + 2), fill=HEADER_BG + (255,))
+
+    def _stamp_backpack_dims(
+        self,
+        page: PILImage.Image,
+        spec: dict,
+        job: JobSpec,
+    ) -> None:
+        """Overwrite baked dimension callouts with active placement sizes."""
+        labels = spec.get("dim_labels") or {}
+        if not labels:
+            return
+        place = spec.get("placement") or resolve_backpack_placement(job.panel_config)
+        art_w, art_h = spec.get("artwork_cm") or (
+            float(place["width_cm"]),
+            float(place["height_cm"]),
+        )
+        draw = ImageDraw.Draw(page)
+        fill = NAVY + (255,)
+        font = _font(False, int(15 * SCALE))
+        font_sm = _font(False, int(12 * SCALE))
+
+        height_box = labels.get("height")
+        if height_box:
+            x, y, w, h = _pts(height_box)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+            # Vertical stack: value then caption
+            draw.text(
+                (x + w * 0.55, y + h * 0.35),
+                f"{art_h:g} cm",
+                font=font,
+                fill=fill,
+                anchor="mm",
+            )
+            draw.text(
+                (x + w * 0.55, y + h * 0.72),
+                "(artwork height)",
+                font=font_sm,
+                fill=fill,
+                anchor="mm",
+            )
+
+        width_box = labels.get("width")
+        if width_box:
+            x, y, w, h = _pts(width_box)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+            draw.text(
+                (x + w * 0.5, y + h * 0.5),
+                f"{art_w:g} cm  (artwork width)",
+                font=font,
+                fill=fill,
+                anchor="mm",
+            )
+
+        note_box = labels.get("note")
+        if note_box:
+            x, y, w, h = _pts(note_box)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+            label = str(place.get("label") or "Upper center")
+            draw.text(
+                (x, y + h * 0.5),
+                f"*artwork on the {label.lower()}",
+                font=font_sm,
+                fill=fill,
+                anchor="lm",
+            )
 
     def _recolor_fabric(
         self,
