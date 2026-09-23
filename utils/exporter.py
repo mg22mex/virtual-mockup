@@ -1369,11 +1369,12 @@ class WorksheetExporter:
         if place_label_box:
             x, y, w, h = _pts(place_label_box)
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-            label = str(place.get("label") or "Upper center")
+            # Prefer Paula callout copy (Option #4 → "upper center") over UI label.
+            callout = str(place.get("callout") or place.get("label") or "upper center")
             font_place = _font(False, int(36 * SCALE))
             draw.text(
                 (x, y + h * 0.5),
-                label.lower(),
+                callout.lower(),
                 font=font_place,
                 fill=note_fill,
                 anchor="lm",

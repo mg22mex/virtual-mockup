@@ -55,10 +55,10 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
             "rotate": -4.0,
         },
         "black": {
-            "box": (575.0, 845.0, 198.0, 56.0),
-            "cover": (400.0, 760.0, 400.0, 260.0),
+            "box": (595.0, 833.0, 198.0, 56.0),
+            "cover": (420.0, 750.0, 400.0, 260.0),
             "erase": "photo",
-            "rotate": -12.0,
+            "rotate": -7.0,
         },
     },
     "center": {
@@ -75,10 +75,10 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
             "rotate": -4.0,
         },
         "black": {
-            "box": (575.0, 1035.0, 198.0, 56.0),
-            "cover": (400.0, 930.0, 400.0, 280.0),
+            "box": (595.0, 1020.0, 198.0, 56.0),
+            "cover": (420.0, 920.0, 400.0, 280.0),
             "erase": "photo",
-            "rotate": -11.5,
+            "rotate": -7.0,
         },
     },
     "lower_right_center": {

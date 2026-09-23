@@ -227,6 +227,11 @@ def resolve_backpack_placement(
         }
     rec["key"] = key if key in placements else default_key
     rec.setdefault("label", key.replace("_", " ").title())
+    # Paula sheet callout (may differ from UI label — e.g. Option #4 uses "upper center").
+    rec.setdefault(
+        "callout",
+        str(rec.get("label") or key.replace("_", " ")).lower(),
+    )
     rec.setdefault("width_cm", 13.3)
     rec.setdefault("height_cm", 3.7)
     return rec
