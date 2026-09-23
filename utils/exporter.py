@@ -462,6 +462,9 @@ class WorksheetExporter:
                 upper_box = _cm_box(*upper_center, 13.3, 3.7)
                 ux, uy, uw, uh = upper_box
                 upper_cover = (ux - 80.0, uy - 60.0, uw + 160.0, uh + 120.0)
+                # Absolute wipe for the Illustrator sample mark (≈ y 2220–2320),
+                # independent of the raised upper_center stamp anchor.
+                template_sample_box = (880.0, 2185.0, 340.0, 160.0)
                 needs_upper_clear = place_key in {"center", "lower_right_center"}
                 for idx, slot in enumerate(spec["logos"]):
                     erase = str(slot.get("erase") or "")
@@ -487,14 +490,25 @@ class WorksheetExporter:
                             }
                         spec["logos"][idx] = front
                     elif slot.get("clear_default"):
-                        covers = [upper_cover]
+                        covers = [upper_cover, template_sample_box]
                         if needs_upper_clear:
                             covers.append(draw_cover)
+                        # Deduplicate while preserving order.
+                        seen: set[tuple[float, float, float, float]] = set()
+                        uniq: list[tuple[float, float, float, float]] = []
+                        for cov in covers:
+                            key = tuple(float(v) for v in cov)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            uniq.append(cov)
                         spec["logos"][idx] = {
                             **slot,
                             "box": draw_box,
                             "cover": draw_cover if needs_upper_clear else upper_cover,
-                            "extra_covers": covers,
+                            "extra_covers": uniq,
+                            # Force solid fabric fill on the baked sample plate.
+                            "force_fill_covers": [template_sample_box],
                         }
                 # Dimension + option callouts — Paula v2 anchors (placement-aware).
                 option_tag = backpack_option_label(place_key, job.fabric_name)
@@ -575,13 +589,24 @@ class WorksheetExporter:
                     if not covers:
                         continue
                     if slot.get("clear_default"):
-                        # Clear every residual sample zone, stamp only into slot["box"].
+                        # Pale-heal every residual sample zone; solid-fill only the
+                        # active stamp box so zipper/mesh line-art is preserved.
+                        force_fill = {
+                            tuple(float(v) for v in c)
+                            for c in (slot.get("force_fill_covers") or [])
+                            if c
+                        }
                         for cov in covers:
+                            is_primary = cov == primary
+                            cov_key = tuple(float(v) for v in cov)
                             self._clear_lineart_logo_zone(
                                 page,
                                 cov,
                                 fabric,
-                                box=None if cov != primary else slot.get("box"),
+                                box=slot.get("box") if is_primary else (
+                                    cov if cov_key in force_fill else None
+                                ),
+                                fill_stamp=is_primary or cov_key in force_fill,
                             )
                     elif erase == "photo":
                         if "black" in fabric_key:
@@ -1003,6 +1028,8 @@ class WorksheetExporter:
         cover: tuple[float, float, float, float],
         fabric: tuple[int, int, int],
         box: tuple[float, float, float, float] | None = None,
+        *,
+        fill_stamp: bool = True,
     ) -> None:
         """Remove the baked sample mark on Graphic Sample Option #1 line art.
 
@@ -1033,8 +1060,9 @@ class WorksheetExporter:
             crop = cv2.cvtColor(healed, cv2.COLOR_BGR2RGB)
             page.paste(PILImage.fromarray(crop), (x0, y0))
 
-        art_box = box or cover
-        self._fill_cover(page, art_box, fabric)
+        if fill_stamp:
+            art_box = box or cover
+            self._fill_cover(page, art_box, fabric)
 
     def _paint_artwork_swatch(
         self,

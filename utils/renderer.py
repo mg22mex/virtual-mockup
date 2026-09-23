@@ -43,71 +43,74 @@ BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
     "upper_center": {
         "sage": {
-            "box": (530.0, 905.0, 185.0, 52.0),
-            "cover": (400.0, 790.0, 400.0, 280.0),
+            "box": (525.0, 880.0, 190.0, 54.0),
+            "cover": (400.0, 780.0, 400.0, 260.0),
             "erase": "photo",
             "rotate": 2.5,
         },
         "steel": {
-            "box": (455.0, 830.0, 185.0, 52.0),
-            "cover": (400.0, 790.0, 400.0, 280.0),
+            "box": (448.0, 805.0, 190.0, 54.0),
+            "cover": (380.0, 720.0, 400.0, 260.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (582.0, 875.0, 190.0, 54.0),
-            "cover": (400.0, 790.0, 400.0, 280.0),
+            "box": (575.0, 845.0, 198.0, 56.0),
+            "cover": (400.0, 760.0, 400.0, 260.0),
             "erase": "photo",
-            "rotate": -11.0,
+            "rotate": -12.0,
         },
     },
     "center": {
         "sage": {
-            "box": (530.0, 1035.0, 185.0, 52.0),
-            "cover": (400.0, 930.0, 400.0, 280.0),
+            "box": (525.0, 1045.0, 190.0, 54.0),
+            "cover": (400.0, 940.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": 2.5,
         },
         "steel": {
-            "box": (455.0, 960.0, 185.0, 52.0),
-            "cover": (400.0, 860.0, 400.0, 280.0),
+            "box": (448.0, 970.0, 190.0, 54.0),
+            "cover": (380.0, 870.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (582.0, 1005.0, 190.0, 54.0),
-            "cover": (400.0, 910.0, 400.0, 280.0),
+            "box": (575.0, 1035.0, 198.0, 56.0),
+            "cover": (400.0, 930.0, 400.0, 280.0),
             "erase": "photo",
-            "rotate": -11.0,
+            "rotate": -11.5,
         },
     },
     "lower_right_center": {
         "sage": {
-            "box": (568.0, 1165.0, 108.0, 30.0),
-            "cover": (480.0, 1100.0, 320.0, 220.0),
+            "box": (585.0, 1210.0, 108.0, 30.0),
+            "cover": (490.0, 1140.0, 320.0, 220.0),
             "erase": "photo",
-            "rotate": 2.0,
+            "rotate": 1.5,
         },
         "steel": {
-            "box": (512.0, 1100.0, 108.0, 30.0),
-            "cover": (430.0, 1040.0, 320.0, 220.0),
+            "box": (528.0, 1145.0, 108.0, 30.0),
+            "cover": (440.0, 1080.0, 320.0, 220.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (648.0, 1155.0, 112.0, 32.0),
-            "cover": (560.0, 1110.0, 320.0, 220.0),
+            "box": (668.0, 1210.0, 115.0, 32.0),
+            "cover": (560.0, 1140.0, 320.0, 220.0),
             "erase": "photo",
-            "rotate": -10.5,
+            "rotate": -9.5,
         },
     },
 }
 
-# Graphic Sample line-art stamp anchors (PDF points) per placement.
+# Graphic Sample line-art stamp anchors (PDF points) — centers of Paula v2 marks.
 BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
-    "upper_center": (1041.5, 2275.0),
-    "center": (1041.5, 2480.0),
-    "lower_right_center": (1125.0, 2685.0),
+    # Raised toward top zipper so Option #1 sits on the upper chest panel.
+    "upper_center": (1041.5, 2195.0),
+    # Dead-center of the front panel (Paula page 4).
+    "center": (1041.5, 2430.0),
+    # Adjacent to Weatherman mark (Paula page 7).
+    "lower_right_center": (1136.5, 2809.0),
 }
 
 # Paula v2 dimension arrow + label anchors (PDF points) per placement.
@@ -115,11 +118,11 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
 BACKPACK_DIM_LAYOUTS: dict[str, dict[str, Any]] = {
     "upper_center": {
         "h_line": (885.7, 3016.1, 1197.3, 3016.1),
-        "v_line": (1495.2, 2237.0, 1495.2, 2313.3),
+        "v_line": (1495.2, 2157.0, 1495.2, 2233.0),
         "width_value": (986.7, 2960.3, 110.0, 44.2),
         "width_caption": (948.0, 3023.2, 190.0, 36.0),
-        "height_value": (1439.7, 2227.0, 44.2, 96.3),
-        "height_caption": (1508.6, 2183.0, 36.0, 184.3),
+        "height_value": (1439.7, 2147.0, 44.2, 96.3),
+        "height_caption": (1508.6, 2103.0, 36.0, 184.3),
     },
     "center": {
         "h_line": (885.7, 3016.1, 1197.3, 3016.1),
