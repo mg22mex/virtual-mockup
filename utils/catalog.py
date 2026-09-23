@@ -118,6 +118,44 @@ def logo_color_rgb(name: str) -> tuple[int, int, int]:
     return int(rgb[0]), int(rgb[1]), int(rgb[2])
 
 
+def logo_luminance(rgb: tuple[int, int, int]) -> float:
+    return 0.2126 * float(rgb[0]) + 0.7152 * float(rgb[1]) + 0.0722 * float(rgb[2])
+
+
+def is_light_logo_color(
+    name: str | None = None,
+    rgb: tuple[int, int, int] | None = None,
+) -> bool:
+    """True when print color is white / near-white (needs a dark Artwork canvas)."""
+    token = " ".join(str(name or "").lower().replace("-", " ").split())
+    if any(k in token for k in ("white", "ivory", "cream", "snow", "frost")):
+        return True
+    if "match uploaded" in token:
+        return False
+    if rgb is None and name:
+        rgb = logo_color_rgb(name)
+    if rgb is None:
+        return False
+    return logo_luminance(rgb) >= 200.0
+
+
+# Paula tech-pack Artwork preview canvases.
+ARTWORK_BG_DARK = (44, 44, 44)  # #2C2C2C — white / light logos
+ARTWORK_BG_LIGHT = (245, 245, 245)  # #F5F5F5 — dark logos
+ARTWORK_BORDER_DARK = (58, 58, 58)
+ARTWORK_BORDER_LIGHT = (226, 232, 240)
+
+
+def artwork_preview_bg(
+    name: str | None = None,
+    rgb: tuple[int, int, int] | None = None,
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Return (background_rgb, border_rgb) for the top-right Artwork card."""
+    if is_light_logo_color(name, rgb):
+        return ARTWORK_BG_DARK, ARTWORK_BORDER_DARK
+    return ARTWORK_BG_LIGHT, ARTWORK_BORDER_LIGHT
+
+
 def backpack_placements(product_key: str = "venture_dry_pack") -> dict[str, dict[str, Any]]:
     """Placement modes for Venture Dry Pack (Style #: 40002) and siblings."""
     spec = product_specs().get(product_key) or {}

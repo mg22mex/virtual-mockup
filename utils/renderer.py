@@ -285,9 +285,13 @@ class MockupRenderer:
             return img
 
         fill = fill_rgb or (PANTONE_WHITE_C if mode == "white" else PANTONE_BLACK_C)
-        want_white = mode == "white" or (
-            fill is not None and int(fill[0]) >= 250 and int(fill[1]) >= 250 and int(fill[2]) >= 250
-        )
+        # Explicit fill_rgb always wins over knockout mode (e.g. Black C on white fabric).
+        if fill_rgb is not None:
+            want_white = (
+                int(fill[0]) >= 250 and int(fill[1]) >= 250 and int(fill[2]) >= 250
+            )
+        else:
+            want_white = mode == "white"
 
         if want_white:
             # Pure white ink from alpha — preserve crisp white client art as-is.
@@ -414,7 +418,7 @@ class MockupRenderer:
         bg_rgb: tuple[int, int, int] = (244, 244, 245),
         border_rgb: tuple[int, int, int] | None = (226, 232, 240),
     ) -> Image.Image:
-        """Standalone Artwork container with neutral light background (#F4F4F5)."""
+        """Standalone Artwork container; bg/border set by artwork_preview_bg()."""
         w, h = max(1, int(size[0])), max(1, int(size[1]))
         color = tuple(int(v) for v in bg_rgb) + (255,)
         panel = Image.new("RGBA", (w, h), color)

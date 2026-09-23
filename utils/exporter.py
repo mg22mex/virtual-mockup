@@ -18,6 +18,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .catalog import (
+    artwork_preview_bg,
     backpack_option_label,
     fabric_sheet_lines,
     logo_color_rgb,
@@ -491,13 +492,15 @@ class WorksheetExporter:
                             "cover": draw_cover if needs_upper_clear else upper_cover,
                             "extra_covers": covers,
                         }
-                # Dimension + option callouts track the active art bound / placement.
-                hx = dx + dw + 18.0
-                hy = dy - 10.0
+                # Dimension + option callouts — fixed Paula v2 worksheet anchors (off-bag).
                 option_tag = backpack_option_label(place_key, job.fabric_name)
                 spec["dim_labels"] = {
-                    "height": (hx, hy, 100.0, max(120.0, dh + 40.0)),
-                    "width": (dx - 20.0, dy + dh + 12.0, max(220.0, dw + 40.0), 42.0),
+                    # Vertical height value + caption (rotated text, right of line art).
+                    "height_value": (1439.7, 2227.0, 44.2, 96.3),
+                    "height_caption": (1508.6, 2183.0, 36.0, 184.3),
+                    # Horizontal width value + caption (below bag).
+                    "width_value": (986.7, 2960.3, 110.0, 44.2),
+                    "width_caption": (953.4, 3023.2, 176.3, 36.0),
                     "note": (1650.0, 1908.0, 380.0, 60.0),
                     "place_label": (1650.0, 1960.0, 360.0, 62.0),
                     "option": (1670.0, 1729.0, 400.0, 106.0),
@@ -540,10 +543,10 @@ class WorksheetExporter:
                     polygons=spec.get("recolor_polys"),
                     max_lum=float(spec.get("recolor_max_lum") or 95),
                 )
-            # Artwork preview: programmatic solid fabric — no letterbox / black base.
+            # Artwork preview: high-contrast canvas from logo print color (all families).
             for slot in spec["logos"]:
                 if str(slot.get("erase") or "") == "artwork":
-                    self._paint_artwork_swatch(page, base, slot, fabric)
+                    self._paint_artwork_swatch(page, base, slot, fabric, job=job)
             # Sage/Steel native SKU photos have no baked mark — skip photo inpaint.
             # Black base crop still carries sample M13; cleared via _blank_photo_logo_zone.
             fabric_key = " ".join(str(job.fabric_name or "").lower().split())
@@ -683,14 +686,25 @@ class WorksheetExporter:
             if alpha_mask.any():
                 ink_rgb = arr_art[alpha_mask, :3].mean(axis=0)
                 ink_lum = 0.2126 * float(ink_rgb[0]) + 0.7152 * float(ink_rgb[1]) + 0.0722 * float(ink_rgb[2])
+                ink_tuple = (
+                    int(round(float(ink_rgb[0]))),
+                    int(round(float(ink_rgb[1]))),
+                    int(round(float(ink_rgb[2]))),
+                )
             else:
                 ink_lum = 255.0
+                ink_tuple = (255, 255, 255)
 
-            slot_bg = (244, 244, 245) if erase_mode == "artwork" else fabric
+            # Artwork card: canvas already flips dark/light from print color — match it.
+            if erase_mode == "artwork":
+                slot_bg, _ = artwork_preview_bg(rgb=ink_tuple)
+            else:
+                slot_bg = fabric
             bg_lum = 0.2126 * float(slot_bg[0]) + 0.7152 * float(slot_bg[1]) + 0.0722 * float(slot_bg[2])
             delta_lum = abs(ink_lum - bg_lum)
 
-            if delta_lum < 48.0:
+            # Skip outlines on the Artwork card once the canvas provides contrast.
+            if erase_mode != "artwork" and delta_lum < 48.0:
                 outline_px = max(1, int(round(1.0 * SCALE)))
                 outline = (255, 255, 255) if ink_lum < 128.0 else (120, 120, 120)
 
@@ -1028,15 +1042,20 @@ class WorksheetExporter:
         template: PILImage.Image,
         slot: dict,
         fabric: tuple[int, int, int],
+        *,
+        job: JobSpec | None = None,
     ) -> None:
-        """Artwork callout: neutral background (#F4F4F5) so dark artwork remains clear regardless of fabric selection."""
+        """Artwork callout: dark charcoal for white/light logos, light plate for dark logos."""
         cover = slot.get("cover") or slot.get("box")
         if not cover:
             return
         x, y, w, h = _pts(cover)
         if w < 1 or h < 1:
             return
-        swatch = self.renderer.solid_artwork_panel((w, h), bg_rgb=(244, 244, 245), border_rgb=(226, 232, 240))
+        name = job.logo_color_name if job is not None else None
+        rgb = logo_color_rgb(name) if name else None
+        bg_rgb, border_rgb = artwork_preview_bg(name, rgb)
+        swatch = self.renderer.solid_artwork_panel((w, h), bg_rgb=bg_rgb, border_rgb=border_rgb)
         if page.mode == "RGBA":
             page.paste(swatch, (x, y), swatch)
         else:
@@ -1139,13 +1158,45 @@ class WorksheetExporter:
             # Fill with header background to remove any dark navy chip block completely
             draw.rectangle((cx - 2, cy - 2, cx + cw + 2, cy + ch + 2), fill=HEADER_BG + (255,))
 
+    def _paste_rotated_label(
+        self,
+        page: PILImage.Image,
+        box: tuple[float, float, float, float],
+        text: str,
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+        fill: tuple[int, int, int, int],
+        *,
+        angle: float = 90.0,
+        wipe: bool = True,
+    ) -> None:
+        """White-out a tight margin box, then paste rotated text (no bag spill)."""
+        x, y, w, h = _pts(box)
+        if wipe:
+            draw = ImageDraw.Draw(page)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+        probe = ImageDraw.Draw(PILImage.new("RGBA", (1, 1)))
+        bbox = probe.textbbox((0, 0), text, font=font)
+        tw, th = max(1, bbox[2] - bbox[0]), max(1, bbox[3] - bbox[1])
+        pad = max(2, int(2 * SCALE))
+        canvas = PILImage.new("RGBA", (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(canvas).text(
+            (pad - bbox[0], pad - bbox[1]),
+            text,
+            font=font,
+            fill=fill,
+        )
+        rot = canvas.rotate(angle, expand=True, resample=PILImage.Resampling.BICUBIC)
+        px = x + max(0, (w - rot.width) // 2)
+        py = y + max(0, (h - rot.height) // 2)
+        page.paste(rot, (px, py), rot)
+
     def _stamp_backpack_dims(
         self,
         page: PILImage.Image,
         spec: dict,
         job: JobSpec,
     ) -> None:
-        """Overwrite baked dimension callouts with active placement sizes."""
+        """Overwrite baked dimension callouts at fixed Paula v2 margin anchors."""
         labels = spec.get("dim_labels") or {}
         if not labels:
             return
@@ -1158,35 +1209,64 @@ class WorksheetExporter:
         fill = NAVY + (255,)
         font = _font(False, int(15 * SCALE))
         font_sm = _font(False, int(12 * SCALE))
+        w_txt = f"{art_w:.1f} cm"
+        h_txt = f"{art_h:.1f} cm"
 
-        height_box = labels.get("height")
-        if height_box:
-            x, y, w, h = _pts(height_box)
-            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-            # Vertical stack: value then caption
-            draw.text(
-                (x + w * 0.55, y + h * 0.35),
-                f"{art_h:g} cm",
-                font=font,
-                fill=fill,
-                anchor="mm",
-            )
-            draw.text(
-                (x + w * 0.55, y + h * 0.72),
+        # Vertical height value + caption (right of line art) — tight wipe only.
+        height_value = labels.get("height_value")
+        if height_value:
+            self._paste_rotated_label(page, height_value, h_txt, font, fill, angle=90.0)
+        else:
+            height_box = labels.get("height")
+            if height_box:
+                x, y, w, h = _pts(height_box)
+                draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+                draw.text((x + w * 0.55, y + h * 0.35), h_txt, font=font, fill=fill, anchor="mm")
+                draw.text(
+                    (x + w * 0.55, y + h * 0.72),
+                    "(artwork height)",
+                    font=font_sm,
+                    fill=fill,
+                    anchor="mm",
+                )
+
+        height_caption = labels.get("height_caption")
+        if height_caption:
+            self._paste_rotated_label(
+                page,
+                height_caption,
                 "(artwork height)",
-                font=font_sm,
-                fill=fill,
-                anchor="mm",
+                font_sm,
+                fill,
+                angle=90.0,
             )
 
-        width_box = labels.get("width")
-        if width_box:
-            x, y, w, h = _pts(width_box)
+        width_value = labels.get("width_value")
+        if width_value:
+            x, y, w, h = _pts(width_value)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+            draw.text((x + w * 0.5, y + h * 0.5), w_txt, font=font, fill=fill, anchor="mm")
+        else:
+            width_box = labels.get("width")
+            if width_box:
+                x, y, w, h = _pts(width_box)
+                draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+                draw.text(
+                    (x + w * 0.5, y + h * 0.5),
+                    f"{w_txt}  (artwork width)",
+                    font=font,
+                    fill=fill,
+                    anchor="mm",
+                )
+
+        width_caption = labels.get("width_caption")
+        if width_caption:
+            x, y, w, h = _pts(width_caption)
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
             draw.text(
                 (x + w * 0.5, y + h * 0.5),
-                f"{art_w:g} cm  (artwork width)",
-                font=font,
+                "(artwork width)",
+                font=font_sm,
                 fill=fill,
                 anchor="mm",
             )
