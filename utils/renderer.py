@@ -28,6 +28,12 @@ BACKPACK_LINEART_MASK = BACKPACK_DIR / "backpack_lineart_mask.png"
 BACKPACK_FRONT_BASE = BACKPACK_DIR / "backpack_front_base.png"
 BACKPACK_FRONT_SAGE = BACKPACK_DIR / "backpack_front_sage.png"
 BACKPACK_FRONT_STEEL = BACKPACK_DIR / "backpack_front_steelblue.png"
+# Paula Venture Dry Pack v2 production sheets (vector PDF, Options #1–#9).
+BACKPACK_V2_PDF_CANDIDATES = (
+    ROOT / "Proper Brands x WM Umbrella 2026 Mockup Designs v2.pdf",
+    BACKPACK_DIR / "Proper Brands x WM Umbrella 2026 Mockup Designs v2.pdf",
+    TEMPLATE_DIR / "Proper Brands x WM Umbrella 2026 Mockup Designs v2.pdf",
+)
 # Optional JPEG sidecars (smaller Cloud checkout / lower peak RAM).
 BACKPACK_FRONT_SAGE_JPG = BACKPACK_DIR / "backpack_front_sage.jpg"
 BACKPACK_FRONT_STEEL_JPG = BACKPACK_DIR / "backpack_front_steelblue.jpg"
@@ -111,6 +117,80 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
     "center": (1041.5, 2430.0),
     # Adjacent to Weatherman mark (Paula page 7).
     "lower_right_center": (1136.5, 2809.0),
+}
+
+# Paula v2 PDF vector path — measured baked-mark anchors (exact page coords).
+# Raster BACKPACK_FRONT_OVERLAYS / DRAW_CENTERS stay for the Illustrator PNG pipeline;
+# upper_center there is intentionally raised. PDF overlays must hit Paula's marks.
+BACKPACK_PDF_DRAW_CENTERS: dict[str, tuple[float, float]] = {
+    "upper_center": (1041.5, 2283.0),
+    "center": (1041.5, 2430.0),
+    "lower_right_center": (1137.0, 2809.0),
+}
+
+# Front photo slots on the v2 PDF (72 DPI points), measured per Options #1–#9.
+# rotate: PIL CCW degrees matching Paula's foreshortened panel incline.
+BACKPACK_PDF_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
+    "upper_center": {
+        "black": {
+            "box": (600.0, 888.0, 165.0, 78.0),
+            "cover": (592.0, 880.0, 180.0, 94.0),
+            "erase": "photo",
+            "rotate": 14.0,
+        },
+        "steel": {
+            "box": (600.0, 888.0, 165.0, 78.0),
+            "cover": (592.0, 880.0, 180.0, 94.0),
+            "erase": "photo",
+            "rotate": 14.0,
+        },
+        "sage": {
+            "box": (595.0, 888.0, 155.0, 78.0),
+            "cover": (587.0, 880.0, 170.0, 94.0),
+            "erase": "photo",
+            "rotate": 14.0,
+        },
+    },
+    "center": {
+        "black": {
+            "box": (572.0, 958.0, 168.0, 78.0),
+            "cover": (564.0, 950.0, 184.0, 94.0),
+            "erase": "photo",
+            "rotate": 14.0,
+        },
+        "steel": {
+            "box": (572.0, 958.0, 168.0, 78.0),
+            "cover": (564.0, 950.0, 184.0, 94.0),
+            "erase": "photo",
+            "rotate": 14.0,
+        },
+        "sage": {
+            "box": (570.0, 958.0, 155.0, 78.0),
+            "cover": (562.0, 950.0, 170.0, 94.0),
+            "erase": "photo",
+            "rotate": 14.0,
+        },
+    },
+    "lower_right_center": {
+        "black": {
+            "box": (640.0, 1188.0, 130.0, 42.0),
+            "cover": (632.0, 1180.0, 146.0, 58.0),
+            "erase": "photo",
+            "rotate": 12.0,
+        },
+        "steel": {
+            "box": (618.0, 1180.0, 100.0, 42.0),
+            "cover": (610.0, 1172.0, 116.0, 58.0),
+            "erase": "photo",
+            "rotate": 12.0,
+        },
+        "sage": {
+            "box": (618.0, 1180.0, 100.0, 42.0),
+            "cover": (610.0, 1172.0, 116.0, 58.0),
+            "erase": "photo",
+            "rotate": 12.0,
+        },
+    },
 }
 
 # Paula v2 dimension arrow + label anchors (PDF points) per placement.
@@ -1068,6 +1148,35 @@ def _normalize_fabric_key(name: str | None) -> str:
     return " ".join(str(name or "").lower().replace("—", " ").replace("-", " ").split())
 
 
+def get_backpack_pdf_front_slot(
+    fabric_name: str | None = None,
+    placement: str | None = None,
+) -> dict[str, Any]:
+    """Front photo logo slot for the Paula v2 PDF vector overlay path."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    place_key = str(place.get("key") or "upper_center")
+    by_color = BACKPACK_PDF_FRONT_OVERLAYS.get(place_key) or BACKPACK_PDF_FRONT_OVERLAYS["upper_center"]
+    color_key = _normalize_fabric_key(fabric_name)
+    if "steel" in color_key:
+        slot = by_color.get("steel")
+    elif "sage" in color_key:
+        slot = by_color.get("sage")
+    else:
+        slot = by_color.get("black")
+    return dict(slot or by_color["black"])
+
+
+def backpack_pdf_draw_center(placement: str | None = None) -> tuple[float, float]:
+    """Graphic Sample stamp center on the Paula v2 PDF (exact baked-mark anchor)."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    key = str(place.get("key") or "upper_center")
+    return BACKPACK_PDF_DRAW_CENTERS.get(key, BACKPACK_PDF_DRAW_CENTERS["upper_center"])
+
+
 def get_backpack_front_slot(
     fabric_name: str | None,
     placement: str | None = None,
@@ -1118,6 +1227,44 @@ def backpack_dim_layout(placement: str | None = None) -> dict[str, Any]:
     place = resolve_backpack_placement(placement)
     key = str(place.get("key") or "upper_center")
     return dict(BACKPACK_DIM_LAYOUTS.get(key) or BACKPACK_DIM_LAYOUTS["upper_center"])
+
+
+def backpack_v2_pdf_path() -> Path | None:
+    """Return the first existing Paula Venture Dry Pack v2 PDF path."""
+    for path in BACKPACK_V2_PDF_CANDIDATES:
+        try:
+            if path.is_file() and path.stat().st_size > 1024:
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def backpack_v2_fabric_offset(fabric_name: str | None) -> int:
+    """0=Black, 1=Steel Blue, 2=Sage — matches Paula Options #1/#2/#3 stride."""
+    key = _normalize_fabric_key(fabric_name)
+    if "steel" in key:
+        return 1
+    if "sage" in key:
+        return 2
+    return 0
+
+
+def resolve_backpack_v2_page_index(
+    placement: str | None = None,
+    fabric_name: str | None = None,
+) -> int:
+    """0-based page index into Paula v2 PDF (Options #1–#9 → pages 0–8)."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    key = str(place.get("key") or "upper_center")
+    base = {
+        "upper_center": 0,
+        "center": 3,
+        "lower_right_center": 6,
+    }.get(key, 0)
+    return int(base + backpack_v2_fabric_offset(fabric_name))
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:

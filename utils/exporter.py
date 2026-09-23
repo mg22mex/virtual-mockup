@@ -36,7 +36,12 @@ from .renderer import (
     backpack_artwork_cm,
     backpack_dim_layout,
     backpack_draw_center,
+    backpack_pdf_draw_center,
+    backpack_v2_pdf_path,
     fit_logo_uniform,
+    get_backpack_front_slot,
+    get_backpack_pdf_front_slot,
+    resolve_backpack_v2_page_index,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -399,6 +404,23 @@ class WorksheetExporter:
         quality: int = 88,
     ) -> list[tuple[str, bytes]]:
         """Official stamped pages, scaled for the on-screen proof."""
+        family = self._job_family(job)
+        if family == "backpack" and backpack_v2_pdf_path() is not None:
+            return self._preview_backpack_pdf_template(
+                job, logo, max_width=max_width, quality=quality
+            )
+        return self._preview_standard_canvas(
+            job, logo, max_width=max_width, quality=quality
+        )
+
+    def _preview_standard_canvas(
+        self,
+        job: JobSpec,
+        logo: PILImage.Image | None,
+        *,
+        max_width: int = 1400,
+        quality: int = 88,
+    ) -> list[tuple[str, bytes]]:
         previews: list[tuple[str, bytes]] = []
         for _page_no, title, page in self.iter_job_pages(job, logo):
             try:
@@ -416,7 +438,49 @@ class WorksheetExporter:
                 print("Exporter Error:", traceback.format_exc(), flush=True)
         return previews
 
+    def _preview_backpack_pdf_template(
+        self,
+        job: JobSpec,
+        logo: PILImage.Image | None,
+        *,
+        max_width: int = 1400,
+        quality: int = 88,
+    ) -> list[tuple[str, bytes]]:
+        """Rasterize the backpack PDF-template page for Streamlit preview."""
+        import fitz
+
+        try:
+            pdf_bytes = self.render_backpack_with_pdf_template(job, logo)
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            page = doc[0]
+            zoom = max(1.0, float(max_width) / float(page.rect.width))
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+            img = PILImage.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            if img.width > max_width:
+                ratio = max_width / img.width
+                img = img.resize(
+                    (max_width, max(1, int(img.height * ratio))),
+                    PILImage.Resampling.LANCZOS,
+                )
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            title = self._page_title("backpack", 1)
+            return [(title, buf.getvalue())]
+        except Exception:
+            print("Exporter Error:", traceback.format_exc(), flush=True)
+            # Fall back to the raster Illustrator pipeline.
+            return self._preview_standard_canvas(
+                job, logo, max_width=max_width, quality=quality
+            )
+
     def build_pdf(self, job: JobSpec, logo: PILImage.Image | None) -> bytes:
+        family = self._job_family(job)
+        if family == "backpack":
+            return self.render_backpack_with_pdf_template(job, logo)
+        return self.render_standard_canvas(job, logo)
+
+    def render_standard_canvas(self, job: JobSpec, logo: PILImage.Image | None) -> bytes:
+        """Umbrella / poncho worksheets — full-page raster stamp via ReportLab."""
         buffer = BytesIO()
         family = self._job_family(job)
         first_pages = STYLE_PAGES.get(job.product_keys[0], [1]) if job.product_keys else [1]
@@ -434,6 +498,378 @@ class WorksheetExporter:
 
         c.save()
         return buffer.getvalue()
+
+    def render_backpack_with_pdf_template(
+        self,
+        job: JobSpec,
+        logo: PILImage.Image | None,
+    ) -> bytes:
+        """Venture Dry Pack worksheets — Paula v2 PDF page as vector background.
+
+        Selects Options #1–#9 by placement × fabric, then overlays only dynamic
+        fields (header, chip, artwork card, front/line-art logos). Falls back to
+        the raster Illustrator pipeline when the v2 PDF is missing.
+        """
+        import fitz
+
+        pdf_path = backpack_v2_pdf_path()
+        if pdf_path is None:
+            return self.render_standard_canvas(job, logo)
+
+        mark = None
+        if logo is not None:
+            fill = None
+            if job.logo_color_name != "Match uploaded art":
+                fill = logo_color_rgb(job.logo_color_name)
+            mark = self.renderer.prepare_logo(logo, job.resolved_knockout(), fill_rgb=fill)
+
+        page_index = resolve_backpack_v2_page_index(job.panel_config, job.fabric_name)
+        src = fitz.open(pdf_path)
+        try:
+            if page_index < 0 or page_index >= src.page_count:
+                page_index = 0
+            doc = fitz.open()
+            doc.insert_pdf(src, from_page=page_index, to_page=page_index)
+        finally:
+            src.close()
+
+        page = doc[0]
+        place = resolve_backpack_placement(job.panel_config)
+        place_key = str(place.get("key") or "upper_center")
+        fabric = job.fabric_rgb
+        spec = self._page_spec("backpack", 1)
+
+        # --- Header metadata + project chip (Paula coords, top-left origin) ---
+        self._pdf_overlay_header(page, spec, job)
+        self._pdf_overlay_chip(page, spec, job)
+
+        # --- Color swatches / labels (keep page fabric; refresh logo color + copy) ---
+        self._pdf_overlay_colors(page, spec, job)
+
+        # --- Artwork card + front photo + line-art logos ---
+        art_slot = next(
+            (s for s in spec["logos"] if str(s.get("erase") or "") == "artwork"),
+            None,
+        )
+        if art_slot:
+            self._pdf_overlay_artwork_card(page, art_slot, mark, job)
+
+        # Paula-measured front + GS anchors (not the raised raster DRAW_CENTERS).
+        front = get_backpack_pdf_front_slot(job.fabric_name, place_key)
+        front_box = tuple(float(v) for v in front["box"])
+        front_cover = tuple(float(v) for v in (front.get("cover") or front_box))
+        self._pdf_overlay_logo_slot(
+            page,
+            {
+                "box": front_box,
+                "cover": front_cover,
+                "rotate": float(front.get("rotate") or 0),
+            },
+            mark,
+            cover_rgb=fabric,
+        )
+
+        art_w, art_h = backpack_artwork_cm(place_key)
+        center = backpack_pdf_draw_center(place_key)
+        draw_box = _cm_box(*center, art_w, art_h)
+        # Tight wipe — large covers leave a visible plate on the flat line-art fill.
+        line_pad = 6.0
+        line_cover = (
+            draw_box[0] - line_pad,
+            draw_box[1] - line_pad,
+            draw_box[2] + 2 * line_pad,
+            draw_box[3] + 2 * line_pad,
+        )
+        line_fill = self._pdf_sample_fill(page, line_cover, fallback=fabric)
+        self._pdf_overlay_logo_slot(
+            page,
+            {"box": draw_box, "cover": line_cover, "rotate": 0},
+            mark,
+            cover_rgb=line_fill,
+            heal=False,
+        )
+
+        meta = doc.metadata or {}
+        meta.update(
+            {
+                "title": worksheet_filename(job.client, job.year, "backpack").replace(".pdf", ""),
+                "author": "Weatherman Virtual Mockup Creator",
+                "subject": "PRODUCTION WORKSHEET",
+            }
+        )
+        doc.set_metadata(meta)
+        out = doc.tobytes(deflate=True, garbage=3)
+        doc.close()
+        return out
+
+    @staticmethod
+    def _pdf_rect(box: tuple[float, float, float, float]):
+        import fitz
+
+        x, y, w, h = box
+        return fitz.Rect(float(x), float(y), float(x + w), float(y + h))
+
+    @staticmethod
+    def _pdf_rgb(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
+        return (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+
+    def _pdf_fill_rect(self, page, box: tuple[float, float, float, float], rgb: tuple[int, int, int]) -> None:
+        page.draw_rect(self._pdf_rect(box), color=None, fill=self._pdf_rgb(rgb), width=0)
+
+    def _pdf_png_bytes(self, image: PILImage.Image) -> bytes:
+        buf = BytesIO()
+        image.convert("RGBA").save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+
+    def _pdf_fitted_mark(
+        self,
+        mark: PILImage.Image,
+        box: tuple[float, float, float, float],
+        *,
+        rotate: float = 0.0,
+        fit_pad: float = 0.0,
+        crisp: bool = False,
+    ) -> PILImage.Image | None:
+        """Fit/rotate a prepared mark into a PDF-point box; returns RGBA at ~2× for sharpness."""
+        _x, _y, w, h = box
+        if w < 1 or h < 1:
+            return None
+        art = mark.convert("RGBA")
+        bbox = art.getchannel("A").getbbox()
+        if bbox:
+            art = art.crop(bbox)
+        if art.width < 1 or art.height < 1:
+            return None
+        if rotate:
+            art = art.rotate(float(rotate), expand=True, resample=PILImage.Resampling.BICUBIC)
+        pad = max(0.0, min(0.45, float(fit_pad)))
+        # Render at template DPI so vector pages stay crisp when zoomed.
+        px_w = max(1, int(round(w * (1.0 - pad) * SCALE)))
+        px_h = max(1, int(round(h * (1.0 - pad) * SCALE)))
+        return fit_logo_uniform(art, px_w, px_h, crisp=crisp)
+
+    def _pdf_insert_mark(
+        self,
+        page,
+        box: tuple[float, float, float, float],
+        mark: PILImage.Image | None,
+        *,
+        rotate: float = 0.0,
+        fit_pad: float = 0.0,
+        crisp: bool = False,
+    ) -> None:
+        if mark is None:
+            return
+        fitted = self._pdf_fitted_mark(
+            mark, box, rotate=rotate, fit_pad=fit_pad, crisp=crisp
+        )
+        if fitted is None:
+            return
+        x, y, w, h = box
+        # Center the fitted bitmap inside the target box.
+        fw = fitted.width / SCALE
+        fh = fitted.height / SCALE
+        ox = x + max(0.0, (w - fw) / 2.0)
+        oy = y + max(0.0, (h - fh) / 2.0)
+        rect = self._pdf_rect((ox, oy, fw, fh))
+        page.insert_image(rect, stream=self._pdf_png_bytes(fitted), keep_proportion=True, overlay=True)
+
+    def _pdf_overlay_header(self, page, spec: dict, job: JobSpec) -> None:
+        fields = spec.get("header_fields") or {}
+        values = {
+            "request_date": job.request_date or "—",
+            "last_update": job.last_update or "—",
+            "project_owner": job.project_owner or "—",
+            "print_order": job.print_order or "—",
+        }
+        for key, box in fields.items():
+            text = str(values.get(key) or "—")
+            self._pdf_fill_rect(page, box, (255, 255, 255))
+            x, y, _w, h = box
+            # insert_text baseline ~0.75em from top of line box
+            page.insert_text(
+                (x + 4.0, y + h * 0.72),
+                text,
+                fontsize=30,
+                fontname="helv",
+                color=self._pdf_rgb(NAVY),
+            )
+
+    def _pdf_overlay_chip(self, page, spec: dict, job: JobSpec) -> None:
+        chip = spec.get("chip")
+        if not chip:
+            return
+        self._pdf_fill_rect(page, chip, NAVY)
+        x, y, _w, h = chip
+        label = f"{(job.client or 'Client').strip()} {job.year}"
+        page.insert_text(
+            (x + 24.0, y + h * 0.62),
+            label,
+            fontsize=34,
+            fontname="helv",
+            color=(1, 1, 1),
+        )
+
+    def _pdf_overlay_colors(self, page, spec: dict, job: JobSpec) -> None:
+        colors = spec.get("colors")
+        if not colors:
+            return
+        fabric = job.fabric_rgb
+        logo_rgb = logo_color_rgb(job.logo_color_name)
+        self._pdf_fill_rect(page, colors["fabric_swatch"], fabric)
+        self._pdf_fill_rect(page, colors["logo_swatch"], logo_rgb)
+        if max(logo_rgb) > 210:
+            page.draw_rect(
+                self._pdf_rect(colors["logo_swatch"]),
+                color=self._pdf_rgb((35, 35, 35)),
+                fill=None,
+                width=1.0,
+            )
+        # Wipe + rewrite labels
+        for box, text in (
+            (colors["fabric_label"], fabric_sheet_label(job.fabric_name)),
+            (colors["logo_label"], logo_sheet_label(job.logo_color_name)),
+        ):
+            self._pdf_fill_rect(page, box, (255, 255, 255))
+            x, y, _w, h = box
+            page.insert_text(
+                (x, y + h * 0.72),
+                text,
+                fontsize=float(colors.get("font_pt") or 32),
+                fontname="hebo",
+                color=self._pdf_rgb(NAVY),
+            )
+
+    def _pdf_overlay_artwork_card(
+        self,
+        page,
+        slot: dict,
+        mark: PILImage.Image | None,
+        job: JobSpec,
+    ) -> None:
+        cover = slot.get("cover") or slot.get("box")
+        box = slot.get("box") or cover
+        if not cover or not box:
+            return
+        bg, border = artwork_preview_bg(job.logo_color_name, logo_color_rgb(job.logo_color_name))
+        self._pdf_fill_rect(page, cover, bg)
+        page.draw_rect(
+            self._pdf_rect(cover),
+            color=self._pdf_rgb(border),
+            fill=None,
+            width=1.5,
+        )
+        self._pdf_insert_mark(
+            page,
+            box,
+            mark,
+            rotate=float(slot.get("rotate") or 0),
+            fit_pad=float(slot.get("fit_pad") or 0.14),
+            crisp=bool(slot.get("crisp")),
+        )
+
+    def _pdf_sample_fill(
+        self,
+        page,
+        cover: tuple[float, float, float, float],
+        *,
+        fallback: tuple[int, int, int],
+    ) -> tuple[int, int, int]:
+        """Median fabric color from the cover rim (avoids sampling the baked logo)."""
+        import fitz
+        import numpy as np
+
+        rect = self._pdf_rect(cover)
+        if rect.width < 4 or rect.height < 4:
+            return fallback
+        pix = page.get_pixmap(matrix=fitz.Matrix(1, 1), clip=rect, alpha=False)
+        rgb = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+        h, w, _ = rgb.shape
+        band = max(1, min(6, h // 8, w // 8))
+        rim = np.concatenate(
+            [
+                rgb[:band, :, :].reshape(-1, 3),
+                rgb[-band:, :, :].reshape(-1, 3),
+                rgb[:, :band, :].reshape(-1, 3),
+                rgb[:, -band:, :].reshape(-1, 3),
+            ],
+            axis=0,
+        )
+        # Prefer darker fabric pixels; skip near-white logo crumbs on the rim.
+        lum = rim.mean(axis=1)
+        dark = rim[lum < 160]
+        sample = dark if len(dark) >= 20 else rim
+        med = np.median(sample, axis=0)
+        return (int(med[0]), int(med[1]), int(med[2]))
+
+    def _pdf_heal_region(self, page, cover: tuple[float, float, float, float]) -> None:
+        """Inpaint baked artwork inside ``cover`` and blit the healed patch back.
+
+        Avoids the flat redaction plate that ``add_redact_annot(fill=…)`` leaves on
+        photo / line-art fabric.
+        """
+        import cv2
+        import fitz
+        import numpy as np
+
+        rect = self._pdf_rect(cover)
+        if rect.width < 2 or rect.height < 2:
+            return
+        zoom = 2.0
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=rect, alpha=False)
+        rgb = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3).copy()
+        r = rgb[:, :, 0].astype(np.int16)
+        g = rgb[:, :, 1].astype(np.int16)
+        b = rgb[:, :, 2].astype(np.int16)
+        # Paula sample marks are light (white / pale) on fabric.
+        bright = (r > 185) & (g > 185) & (b > 185) & (np.abs(r - g) < 30) & (np.abs(g - b) < 30)
+        mask = (bright.astype(np.uint8) * 255)
+        if int(mask.sum()) < 255 * 40:
+            # Fallback: wipe the central band of the cover (logo plate).
+            h, w = mask.shape
+            mask[int(h * 0.12) : int(h * 0.88), int(w * 0.06) : int(w * 0.94)] = 255
+        mask = cv2.dilate(mask, np.ones((5, 5), np.uint8), iterations=2)
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        healed = cv2.inpaint(bgr, mask, 5, cv2.INPAINT_TELEA)
+        out = PILImage.fromarray(cv2.cvtColor(healed, cv2.COLOR_BGR2RGB))
+        page.insert_image(
+            rect,
+            stream=self._pdf_png_bytes(out),
+            keep_proportion=False,
+            overlay=True,
+        )
+
+    def _pdf_overlay_logo_slot(
+        self,
+        page,
+        slot: dict,
+        mark: PILImage.Image | None,
+        *,
+        cover_rgb: tuple[int, int, int],
+        heal: bool = True,
+    ) -> None:
+        import fitz
+
+        box = slot.get("box")
+        if not box:
+            return
+        cover = slot.get("cover") or box
+        if heal:
+            self._pdf_heal_region(page, cover)
+        else:
+            # Solid wipe fallback (vector-only pages / missing OpenCV).
+            rect = self._pdf_rect(cover)
+            page.add_redact_annot(rect, fill=self._pdf_rgb(cover_rgb))
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+        if mark is not None:
+            self._pdf_insert_mark(
+                page,
+                box,
+                mark,
+                rotate=float(slot.get("rotate") or 0),
+                fit_pad=float(slot.get("fit_pad") or 0.0),
+                crisp=bool(slot.get("crisp")),
+            )
 
     def _compose_page(
         self,
