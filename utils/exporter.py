@@ -17,7 +17,13 @@ from PIL import ImageDraw, ImageFont
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from .catalog import fabric_sheet_lines, logo_color_rgb, resolve_backpack_placement, style_family
+from .catalog import (
+    backpack_option_label,
+    fabric_sheet_lines,
+    logo_color_rgb,
+    resolve_backpack_placement,
+    style_family,
+)
 from .renderer import (
     FABRIC_COLORS,
     HEADER_BG,
@@ -451,6 +457,7 @@ class WorksheetExporter:
                 upper_box = _cm_box(*upper_center, 13.3, 3.7)
                 ux, uy, uw, uh = upper_box
                 upper_cover = (ux - 80.0, uy - 60.0, uw + 160.0, uh + 120.0)
+                needs_upper_clear = place_key in {"center", "lower_right_center"}
                 for idx, slot in enumerate(spec["logos"]):
                     erase = str(slot.get("erase") or "")
                     if erase == "photo":
@@ -458,8 +465,8 @@ class WorksheetExporter:
                             job.fabric_name,
                             place_key,
                         )
-                        # Lower placement must also heal the upper photo sample mark.
-                        if place_key == "lower_right_center":
+                        # Non-upper placements must also heal the upper photo sample mark.
+                        if needs_upper_clear:
                             upper_front = self.renderer.get_backpack_front_slot(
                                 job.fabric_name,
                                 "upper_center",
@@ -476,21 +483,25 @@ class WorksheetExporter:
                         spec["logos"][idx] = front
                     elif slot.get("clear_default"):
                         covers = [upper_cover]
-                        if place_key == "lower_right_center":
+                        if needs_upper_clear:
                             covers.append(draw_cover)
                         spec["logos"][idx] = {
                             **slot,
                             "box": draw_box,
-                            "cover": draw_cover if place_key == "lower_right_center" else upper_cover,
+                            "cover": draw_cover if needs_upper_clear else upper_cover,
                             "extra_covers": covers,
                         }
-                # Dimension callouts track the active art bound.
+                # Dimension + option callouts track the active art bound / placement.
                 hx = dx + dw + 18.0
                 hy = dy - 10.0
+                option_tag = backpack_option_label(place_key, job.fabric_name)
                 spec["dim_labels"] = {
                     "height": (hx, hy, 100.0, max(120.0, dh + 40.0)),
                     "width": (dx - 20.0, dy + dh + 12.0, max(220.0, dw + 40.0), 42.0),
-                    "note": (118.0, 2548.0, 480.0, 36.0),
+                    "note": (1650.0, 1908.0, 380.0, 60.0),
+                    "place_label": (1650.0, 1960.0, 360.0, 62.0),
+                    "option": (1670.0, 1729.0, 400.0, 106.0),
+                    "option_tag": option_tag,
                 }
                 spec["placement"] = place
                 spec["artwork_cm"] = (art_w, art_h)
@@ -1191,6 +1202,42 @@ class WorksheetExporter:
                 font=font_sm,
                 fill=fill,
                 anchor="lm",
+            )
+
+        place_label_box = labels.get("place_label")
+        if place_label_box:
+            x, y, w, h = _pts(place_label_box)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+            label = str(place.get("label") or "Upper center")
+            font_place = _font(True, int(22 * SCALE))
+            draw.text(
+                (x, y + h * 0.5),
+                label.lower(),
+                font=font_place,
+                fill=fill,
+                anchor="lm",
+            )
+
+        option_box = labels.get("option")
+        if option_box:
+            x, y, w, h = _pts(option_box)
+            draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
+            tag = str(labels.get("option_tag") or "").strip()
+            if not tag:
+                tag = backpack_option_label(
+                    str(place.get("key") or "upper_center"),
+                    job.fabric_name,
+                )
+            # Paula sheets use "Option #4" style; accept "#4" or "4".
+            if tag and not tag.lower().startswith("option"):
+                tag = f"Option {tag}" if tag.startswith("#") else f"Option #{tag}"
+            font_opt = _font(True, int(28 * SCALE))
+            draw.text(
+                (x + w, y + h * 0.55),
+                tag or "Option #1",
+                font=font_opt,
+                fill=fill,
+                anchor="rm",
             )
 
     def _recolor_fabric(

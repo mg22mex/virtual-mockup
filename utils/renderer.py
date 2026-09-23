@@ -38,6 +38,7 @@ BACKPACK_ARTWORK_BOX = (2378, 1260, 1228, 1485)  # x, y, w, h
 
 # Front-view photo logo overlay slots per placement × colorway (72 DPI PDF points).
 # upper_center: Options #1–#3 · 13.3 × 3.7 cm
+# center: Options #4–#6 · 13.3 × 3.7 cm (dead-center front panel)
 # lower_right_center: Options #7–#9 · 7.2 × 2.0 cm (adjacent to Weatherman mark)
 BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
     "upper_center": {
@@ -56,6 +57,26 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
         "black": {
             "box": (594.5, 897.5, 170.0, 47.0),
             "cover": (400.0, 790.0, 400.0, 280.0),
+            "erase": "photo",
+            "rotate": -9.2,
+        },
+    },
+    "center": {
+        "sage": {
+            "box": (539.0, 1060.0, 170.0, 47.0),
+            "cover": (400.0, 930.0, 400.0, 280.0),
+            "erase": "photo",
+            "rotate": 2.5,
+        },
+        "steel": {
+            "box": (464.0, 986.0, 170.0, 47.0),
+            "cover": (400.0, 860.0, 400.0, 280.0),
+            "erase": "photo",
+            "rotate": -4.0,
+        },
+        "black": {
+            "box": (594.5, 1035.0, 170.0, 47.0),
+            "cover": (400.0, 910.0, 400.0, 280.0),
             "erase": "photo",
             "rotate": -9.2,
         },
@@ -85,6 +106,7 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
 # Graphic Sample line-art stamp anchors (PDF points) per placement.
 BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
     "upper_center": (1041.5, 2275.0),
+    "center": (1041.5, 2480.0),
     "lower_right_center": (1125.0, 2685.0),
 }
 
@@ -1018,6 +1040,7 @@ def get_backpack_front_slot(
 
     Placement modes (Style #: 40002):
       upper_center — Options #1–#3 · 13.3 × 3.7 cm under top zipper
+      center — Options #4–#6 · 13.3 × 3.7 cm dead-center front panel
       lower_right_center — Options #7–#9 · 7.2 × 2.0 cm adjacent to Weatherman mark
     """
     from utils.catalog import resolve_backpack_placement

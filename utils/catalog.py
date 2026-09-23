@@ -150,15 +150,19 @@ def resolve_backpack_placement(
     if token in placements:
         key = token
     else:
+        # Exact label match first (avoids "center" matching "Upper center").
         for cand, rec in placements.items():
-            label = str(rec.get("label") or "").lower()
-            if token and (token == label or token in label or label in token):
+            label = " ".join(str(rec.get("label") or "").lower().split())
+            if token and token == label:
                 key = cand
                 break
-        if "lower" in token or "right" in token:
-            key = "lower_right_center" if "lower_right_center" in placements else key
-        elif "upper" in token:
-            key = "upper_center" if "upper_center" in placements else key
+        else:
+            if "lower" in token or "right" in token:
+                key = "lower_right_center" if "lower_right_center" in placements else key
+            elif "upper" in token:
+                key = "upper_center" if "upper_center" in placements else key
+            elif token == "center" or token == "dead center" or token == "centre":
+                key = "center" if "center" in placements else key
     rec = dict(placements.get(key) or placements.get(default_key) or {})
     if not rec:
         rec = {
@@ -171,3 +175,26 @@ def resolve_backpack_placement(
     rec.setdefault("width_cm", 13.3)
     rec.setdefault("height_cm", 3.7)
     return rec
+
+
+def backpack_option_label(placement_key: str, fabric_name: str | None) -> str:
+    """Return Graphic Sample option tag (e.g. ``#4``) for placement × fabric."""
+    placements = backpack_placements()
+    rec = placements.get(placement_key) or {}
+    by_fabric = rec.get("option_by_fabric") or {}
+    fabric = str(fabric_name or "")
+    if fabric in by_fabric:
+        return str(by_fabric[fabric])
+    key = " ".join(fabric.lower().split())
+    for name, opt in by_fabric.items():
+        nk = " ".join(str(name).lower().split())
+        if key and (key == nk or key in nk or nk in key):
+            return str(opt)
+        if "steel" in key and "steel" in nk:
+            return str(opt)
+        if "sage" in key and "sage" in nk:
+            return str(opt)
+        if "black" in key and "black" in nk:
+            return str(opt)
+    opts = rec.get("options") or []
+    return str(opts[0]) if opts else ""
