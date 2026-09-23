@@ -227,7 +227,7 @@ def resolve_backpack_placement(
         }
     rec["key"] = key if key in placements else default_key
     rec.setdefault("label", key.replace("_", " ").title())
-    # Paula sheet callout (may differ from UI label — e.g. Option #4 uses "upper center").
+    # Worksheet sub-line under Graphic Sample Option #N — tracks Artwork placement.
     rec.setdefault(
         "callout",
         str(rec.get("label") or key.replace("_", " ")).lower(),

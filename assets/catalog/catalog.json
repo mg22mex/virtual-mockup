@@ -231,7 +231,7 @@
         },
         "center": {
           "label": "Center",
-          "callout": "upper center",
+          "callout": "center",
           "width_cm": 13.3,
           "height_cm": 3.7,
           "options": ["#4", "#5", "#6"],

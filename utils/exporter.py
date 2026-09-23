@@ -558,36 +558,60 @@ class WorksheetExporter:
         front = get_backpack_pdf_front_slot(job.fabric_name, place_key)
         front_box = tuple(float(v) for v in front["box"])
         front_cover = tuple(float(v) for v in (front.get("cover") or front_box))
-        self._pdf_overlay_logo_slot(
-            page,
-            {
-                "box": front_box,
-                "cover": front_cover,
-                "rotate": float(front.get("rotate") or 0),
-            },
-            mark,
-            cover_rgb=fabric,
-        )
+        if place_key == "lower_right_center":
+            # Opaque wipe of Paula's baked photo mark (tight), then stamp lower-right.
+            baked_cover = (618.0, 1178.0, 92.0, 48.0)
+            baked_fill = self._pdf_sample_fill(page, baked_cover, fallback=fabric)
+            self._pdf_opaque_wipe(page, baked_cover, baked_fill)
+            if mark is not None:
+                self._pdf_insert_mark(
+                    page,
+                    front_box,
+                    mark,
+                    rotate=float(front.get("rotate") or 0),
+                )
+        else:
+            self._pdf_overlay_logo_slot(
+                page,
+                {
+                    "box": front_box,
+                    "cover": front_cover,
+                    "rotate": float(front.get("rotate") or 0),
+                },
+                mark,
+                cover_rgb=fabric,
+            )
 
         art_w, art_h = backpack_artwork_cm(place_key)
         center = backpack_pdf_draw_center(place_key)
         draw_box = _cm_box(*center, art_w, art_h)
-        # Tight wipe — large covers leave a visible plate on the flat line-art fill.
-        line_pad = 6.0
+        # Tight wipe on the baked sample only — keep the Weatherman mark intact.
+        line_pad = 8.0 if place_key == "lower_right_center" else 6.0
         line_cover = (
             draw_box[0] - line_pad,
             draw_box[1] - line_pad,
             draw_box[2] + 2 * line_pad,
             draw_box[3] + 2 * line_pad,
         )
-        line_fill = self._pdf_sample_fill(page, line_cover, fallback=fabric)
-        self._pdf_overlay_logo_slot(
-            page,
-            {"box": draw_box, "cover": line_cover, "rotate": 0},
-            mark,
-            cover_rgb=line_fill,
-            heal=False,
-        )
+        if place_key == "lower_right_center":
+            # One plate from Weatherman through the stamp box — kills leftover glyphs.
+            wipe = (820.0, 2775.0, 540.0, 75.0)
+            line_fill = self._pdf_sample_fill(page, wipe, fallback=fabric)
+            self._pdf_opaque_wipe(page, wipe, line_fill)
+            if mark is not None:
+                self._pdf_insert_mark(page, draw_box, mark, rotate=0)
+        else:
+            # Inpaint clears vector Proper glyphs without a flat fabric plate.
+            self._pdf_overlay_logo_slot(
+                page,
+                {"box": draw_box, "cover": line_cover, "rotate": 0},
+                mark,
+                cover_rgb=fabric,
+                heal=True,
+            )
+
+        # Paula bakes "*artwork on the upper center" on every Options page — rewrite.
+        self._pdf_overlay_place_callout(page, place)
 
         meta = doc.metadata or {}
         meta.update(
@@ -768,6 +792,52 @@ class WorksheetExporter:
             crisp=bool(slot.get("crisp")),
         )
 
+    def _pdf_opaque_wipe(
+        self,
+        page,
+        box: tuple[float, float, float, float],
+        rgb: tuple[int, int, int],
+    ) -> None:
+        """Paint an opaque fabric plate above existing page content (vectors + images)."""
+        x, y, w, h = (float(v) for v in box)
+        if w < 1 or h < 1:
+            return
+        plate = PILImage.new("RGB", (max(1, int(w * 2)), max(1, int(h * 2))), rgb)
+        page.insert_image(
+            self._pdf_rect(box),
+            stream=self._pdf_png_bytes(plate),
+            keep_proportion=False,
+            overlay=True,
+        )
+
+    def _pdf_overlay_place_callout(self, page, place: dict) -> None:
+        """Rewrite Paula's baked '*artwork on the …' line to match Artwork placement."""
+        import fitz
+
+        # Measured on v2 PDF Options pages (identical across #1–#9).
+        note_box = (1650.0, 1908.0, 370.0, 60.0)
+        place_box = (1650.0, 1960.0, 420.0, 62.0)
+        callout = str(place.get("callout") or place.get("label") or "upper center").lower()
+        for box in (note_box, place_box):
+            page.add_redact_annot(self._pdf_rect(box), fill=(1, 1, 1))
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+        nx, ny, _nw, nh = note_box
+        px, py, _pw, ph = place_box
+        page.insert_text(
+            (nx, ny + nh * 0.72),
+            "*artwork on the",
+            fontsize=36,
+            fontname="helv",
+            color=self._pdf_rgb(NAVY),
+        )
+        page.insert_text(
+            (px, py + ph * 0.72),
+            callout,
+            fontsize=36,
+            fontname="helv",
+            color=self._pdf_rgb(NAVY),
+        )
+
     def _pdf_sample_fill(
         self,
         page,
@@ -802,7 +872,13 @@ class WorksheetExporter:
         med = np.median(sample, axis=0)
         return (int(med[0]), int(med[1]), int(med[2]))
 
-    def _pdf_heal_region(self, page, cover: tuple[float, float, float, float]) -> None:
+    def _pdf_heal_region(
+        self,
+        page,
+        cover: tuple[float, float, float, float],
+        *,
+        force_full: bool = False,
+    ) -> None:
         """Inpaint baked artwork inside ``cover`` and blit the healed patch back.
 
         Avoids the flat redaction plate that ``add_redact_annot(fill=…)`` leaves on
@@ -822,13 +898,13 @@ class WorksheetExporter:
         g = rgb[:, :, 1].astype(np.int16)
         b = rgb[:, :, 2].astype(np.int16)
         # Paula sample marks are light (white / pale) on fabric.
-        bright = (r > 185) & (g > 185) & (b > 185) & (np.abs(r - g) < 30) & (np.abs(g - b) < 30)
+        bright = (r > 160) & (g > 160) & (b > 160) & (np.abs(r - g) < 40) & (np.abs(g - b) < 40)
         mask = (bright.astype(np.uint8) * 255)
-        if int(mask.sum()) < 255 * 40:
-            # Fallback: wipe the central band of the cover (logo plate).
-            h, w = mask.shape
-            mask[int(h * 0.12) : int(h * 0.88), int(w * 0.06) : int(w * 0.94)] = 255
-        mask = cv2.dilate(mask, np.ones((5, 5), np.uint8), iterations=2)
+        h, w = mask.shape
+        if force_full or int(mask.sum()) < 255 * 40:
+            # Wipe the full cover (lower-right needs every baked serif gone).
+            mask[:, :] = 255
+        mask = cv2.dilate(mask, np.ones((7, 7), np.uint8), iterations=2)
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         healed = cv2.inpaint(bgr, mask, 5, cv2.INPAINT_TELEA)
         out = PILImage.fromarray(cv2.cvtColor(healed, cv2.COLOR_BGR2RGB))
@@ -847,6 +923,7 @@ class WorksheetExporter:
         *,
         cover_rgb: tuple[int, int, int],
         heal: bool = True,
+        force_full_heal: bool = False,
     ) -> None:
         import fitz
 
@@ -855,7 +932,7 @@ class WorksheetExporter:
             return
         cover = slot.get("cover") or box
         if heal:
-            self._pdf_heal_region(page, cover)
+            self._pdf_heal_region(page, cover, force_full=force_full_heal)
         else:
             # Solid wipe fallback (vector-only pages / missing OpenCV).
             rect = self._pdf_rect(cover)
@@ -1805,7 +1882,7 @@ class WorksheetExporter:
         if place_label_box:
             x, y, w, h = _pts(place_label_box)
             draw.rectangle((x, y, x + w, y + h), fill=(255, 255, 255, 255))
-            # Prefer Paula callout copy (Option #4 → "upper center") over UI label.
+            # Prefer catalog callout (tracks Artwork placement dropdown).
             callout = str(place.get("callout") or place.get("label") or "upper center")
             font_place = _font(False, int(36 * SCALE))
             draw.text(

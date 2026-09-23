@@ -89,20 +89,20 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
     },
     "lower_right_center": {
         "sage": {
-            "box": (585.0, 1210.0, 108.0, 30.0),
-            "cover": (490.0, 1140.0, 320.0, 220.0),
+            "box": (620.0, 1195.0, 108.0, 30.0),
+            "cover": (560.0, 1165.0, 220.0, 90.0),
             "erase": "photo",
             "rotate": 1.5,
         },
         "steel": {
-            "box": (528.0, 1145.0, 108.0, 30.0),
-            "cover": (440.0, 1080.0, 320.0, 220.0),
+            "box": (600.0, 1185.0, 108.0, 30.0),
+            "cover": (540.0, 1155.0, 220.0, 90.0),
             "erase": "photo",
             "rotate": -4.0,
         },
         "black": {
-            "box": (668.0, 1210.0, 115.0, 32.0),
-            "cover": (560.0, 1140.0, 320.0, 220.0),
+            "box": (680.0, 1195.0, 115.0, 32.0),
+            "cover": (610.0, 1165.0, 220.0, 90.0),
             "erase": "photo",
             "rotate": -9.5,
         },
@@ -115,8 +115,8 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
     "upper_center": (1041.5, 2195.0),
     # Dead-center of the front panel (Paula page 4).
     "center": (1041.5, 2430.0),
-    # Adjacent to Weatherman mark (Paula page 7).
-    "lower_right_center": (1136.5, 2809.0),
+    # Lower-right pocket, adjacent to Weatherman mark (Paula pages 7–9).
+    "lower_right_center": (1245.0, 2809.0),
 }
 
 # Paula v2 PDF vector path — measured baked-mark anchors (exact page coords).
@@ -125,7 +125,8 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
 BACKPACK_PDF_DRAW_CENTERS: dict[str, tuple[float, float]] = {
     "upper_center": (1041.5, 2283.0),
     "center": (1041.5, 2430.0),
-    "lower_right_center": (1137.0, 2809.0),
+    # Toward lower-right pocket / right seam — left of zipper, right of Weatherman.
+    "lower_right_center": (1245.0, 2809.0),
 }
 
 # Front photo slots on the v2 PDF (72 DPI points), measured per Options #1–#9.
@@ -173,20 +174,22 @@ BACKPACK_PDF_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
     },
     "lower_right_center": {
         "black": {
-            "box": (640.0, 1188.0, 130.0, 42.0),
-            "cover": (632.0, 1180.0, 146.0, 58.0),
+            # Toward right seam of the front panel; cover clears Paula's baked mark
+            # without extending onto the white studio backdrop.
+            "box": (680.0, 1188.0, 95.0, 38.0),
+            "cover": (610.0, 1168.0, 180.0, 65.0),
             "erase": "photo",
             "rotate": 12.0,
         },
         "steel": {
-            "box": (618.0, 1180.0, 100.0, 42.0),
-            "cover": (610.0, 1172.0, 116.0, 58.0),
+            "box": (660.0, 1182.0, 95.0, 38.0),
+            "cover": (600.0, 1165.0, 180.0, 65.0),
             "erase": "photo",
             "rotate": 12.0,
         },
         "sage": {
-            "box": (618.0, 1180.0, 100.0, 42.0),
-            "cover": (610.0, 1172.0, 116.0, 58.0),
+            "box": (660.0, 1182.0, 95.0, 38.0),
+            "cover": (600.0, 1165.0, 180.0, 65.0),
             "erase": "photo",
             "rotate": 12.0,
         },
