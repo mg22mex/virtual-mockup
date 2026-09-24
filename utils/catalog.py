@@ -43,6 +43,18 @@ def logo_knockout_mode(name: str) -> str:
     return "none"
 
 
+def default_logo_color_for_fabric(fabric_name: str | None) -> str:
+    """Contrast print ink for a fabric — same rule for umbrella and backpack.
+
+    Light / white fabrics default to Pantone Black C; all other colorways
+    default to Pantone White C. Callers must not override ``Match uploaded art``.
+    """
+    key = " ".join(str(fabric_name or "").lower().split())
+    if "white" in key:
+        return "Pantone Black C"
+    return "Pantone White C"
+
+
 def style_family(key: str) -> str:
     spec = product_specs().get(key) or {}
     return str(spec.get("family") or "umbrella")

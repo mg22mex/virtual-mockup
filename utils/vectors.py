@@ -252,6 +252,14 @@ def recolor_svg_bytes(raw: bytes, hex_or_rgb: str | tuple[int, int, int]) -> byt
     return svg_text.encode("utf-8")
 
 
+def recolor_svg_artwork(
+    raw: bytes,
+    hex_or_rgb: str | tuple[int, int, int],
+) -> bytes:
+    """Shared SVG fill/stroke recolor for umbrella and backpack pipelines."""
+    return recolor_svg_bytes(raw, hex_or_rgb)
+
+
 def load_artwork(
     raw: bytes,
     filename: str,
@@ -270,7 +278,7 @@ def load_artwork(
 
     if suffix == ".svg":
         if color_override:
-            raw = recolor_svg_bytes(raw, color_override)
+            raw = recolor_svg_artwork(raw, color_override)
         return _rasterize_svg(raw, target_width)
     if suffix == ".cdr":
         return _rasterize_cdr(raw, dpi)
