@@ -212,16 +212,8 @@ def resolve_backpack_placement(
                 key = cand
                 break
         else:
-            if "lower" in token and "right" in token:
+            if "lower" in token or "right" in token:
                 key = "lower_right_center" if "lower_right_center" in placements else key
-            elif "lower" in token and "left" in token:
-                key = "lower_left_center" if "lower_left_center" in placements else key
-            elif "lower" in token and "center" in token:
-                key = "lower_center" if "lower_center" in placements else key
-            elif "upper" in token and "left" in token:
-                key = "upper_left" if "upper_left" in placements else key
-            elif "upper" in token and "right" in token:
-                key = "upper_right" if "upper_right" in placements else key
             elif "upper" in token:
                 key = "upper_center" if "upper_center" in placements else key
             elif token == "center" or token == "dead center" or token == "centre":

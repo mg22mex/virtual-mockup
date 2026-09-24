@@ -221,72 +221,51 @@
           "callout": "upper center",
           "width_cm": 13.3,
           "height_cm": 3.7,
-          "options": ["#1"],
+          "options": ["#1", "#2", "#3"],
+          "option_by_fabric": {
+            "Black (NRF 001)": "#1",
+            "Steel Blue": "#2",
+            "Sage": "#3"
+          },
           "pdf_page": 0,
-          "note": "Paula v2 Option #1 — static worksheet page"
-        },
-        "upper_left": {
-          "label": "Upper left",
-          "callout": "upper left",
-          "width_cm": 13.3,
-          "height_cm": 3.7,
-          "options": ["#2"],
-          "pdf_page": 1,
-          "note": "Paula v2 Option #2 — static worksheet page"
-        },
-        "upper_right": {
-          "label": "Upper right",
-          "callout": "upper right",
-          "width_cm": 13.3,
-          "height_cm": 3.7,
-          "options": ["#3"],
-          "pdf_page": 2,
-          "note": "Paula v2 Option #3 — static worksheet page"
+          "note": "Paula v2 Options #1–#3 · upper center · fabric selects colorway page"
         },
         "center": {
           "label": "Center",
           "callout": "center",
           "width_cm": 13.3,
           "height_cm": 3.7,
-          "options": ["#4"],
+          "options": ["#4", "#5", "#6"],
+          "option_by_fabric": {
+            "Black (NRF 001)": "#4",
+            "Steel Blue": "#5",
+            "Sage": "#6"
+          },
           "pdf_page": 3,
-          "note": "Paula v2 Option #4 — static worksheet page"
-        },
-        "lower_center": {
-          "label": "Lower center",
-          "callout": "lower center",
-          "width_cm": 13.3,
-          "height_cm": 3.7,
-          "options": ["#5"],
-          "pdf_page": 4,
-          "note": "Paula v2 Option #5 — static worksheet page"
-        },
-        "lower_left_center": {
-          "label": "Lower left center",
-          "callout": "lower left center",
-          "width_cm": 7.2,
-          "height_cm": 2.0,
-          "options": ["#6"],
-          "pdf_page": 5,
-          "note": "Paula v2 Option #6 — static worksheet page"
+          "note": "Paula v2 Options #4–#6 · center · fabric selects colorway page"
         },
         "lower_right_center": {
           "label": "Lower right center",
           "callout": "lower right center",
           "width_cm": 7.2,
           "height_cm": 2.0,
-          "options": ["#7"],
+          "options": ["#7", "#8", "#9"],
+          "option_by_fabric": {
+            "Black (NRF 001)": "#7",
+            "Steel Blue": "#8",
+            "Sage": "#9"
+          },
           "pdf_page": 6,
-          "note": "Paula v2 Option #7 — static worksheet page"
+          "note": "Paula v2 Options #7–#9 · lower right center · fabric selects colorway page"
         }
       },
       "artwork_width_cm": 13.3,
       "artwork_height_cm": 3.7,
       "placement": "Upper center",
       "features": [
-        "Artwork placement maps 1:1 to Paula v2 Option pages #1–#7",
-        "Static worksheet extract — no dynamic logo stamp on backpack proofs",
-        "Colorways shown on source pages: Black, Steel Blue, Sage"
+        "Artwork placement: Upper center, Center, Lower right center",
+        "Fabric color selects Paula v2 colorway page within each placement trio",
+        "Static worksheet extract — layout geometry from mapped Option page"
       ],
       "core_colors": ["Black (NRF 001)", "Sage", "Steel Blue"],
       "all_colors": ["Black (NRF 001)", "Sage", "Steel Blue"]

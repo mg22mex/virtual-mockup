@@ -506,15 +506,17 @@ class WorksheetExporter:
         job: JobSpec,
         logo: PILImage.Image | None,
     ) -> bytes:
-        """Venture Dry Pack — extract Paula v2 Option page by Artwork placement.
+        """Venture Dry Pack — extract Paula v2 Option page by placement × fabric.
 
-        No coordinate stamps, vector wipes, or logo overlays: the selected page
-        is already a complete worksheet. ``logo`` is unused (API compat).
-        Falls back to the raster Illustrator pipeline when the v2 PDF is missing.
+        Layout geometry comes from the mapped Option page (Upper center → #1,
+        Center → #4, Lower right center → #7). Fabric / pattern color selects
+        the matching colorway page in that trio (#2/#3, #5/#6, #8/#9).
+        ``logo`` is unused (API compat). Falls back to the raster Illustrator
+        pipeline when the v2 PDF is missing.
         """
         import fitz
 
-        _ = logo  # static page extract — artwork is baked into Paula's PDF
+        _ = logo  # static page extract — artwork/colorway baked into Paula's PDF
         pdf_path = backpack_v2_pdf_path()
         if pdf_path is None:
             return self.render_standard_canvas(job, None)

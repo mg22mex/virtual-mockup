@@ -1270,32 +1270,24 @@ def backpack_v2_pdf_path() -> Path | None:
     return None
 
 
-# Artwork placement label → 0-based page index in Paula v2 PDF.
-# Pages are complete worksheets — select by placement only (no coordinate stamps).
+# Artwork placement label → Black (NRF 001) Option page in Paula v2 PDF.
+# Steel Blue / Sage use the same layout at +1 / +2 (Options #2/#3, #5/#6, #8/#9).
 BACKPACK_PAGE_MAP: dict[str, int] = {
-    "Upper center": 0,  # Option #1
-    "Upper left": 1,  # Option #2
-    "Upper right": 2,  # Option #3
-    "Center": 3,  # Option #4
-    "Lower center": 4,  # Option #5
-    "Lower left center": 5,  # Option #6
-    "Lower right center": 6,  # Option #7
+    "Upper center": 0,  # Graphic Sample Option #1
+    "Center": 3,  # Graphic Sample Option #4
+    "Lower right center": 6,  # Graphic Sample Option #7
 }
 
-# Placement keys (catalog) → same page indexes as BACKPACK_PAGE_MAP labels.
+# Placement keys (catalog) → same Black-page indexes as BACKPACK_PAGE_MAP.
 BACKPACK_PAGE_MAP_BY_KEY: dict[str, int] = {
     "upper_center": 0,
-    "upper_left": 1,
-    "upper_right": 2,
     "center": 3,
-    "lower_center": 4,
-    "lower_left_center": 5,
     "lower_right_center": 6,
 }
 
 
 def backpack_v2_fabric_offset(fabric_name: str | None) -> int:
-    """Legacy fabric offset (unused by direct page mapping). Kept for callers."""
+    """0=Black, 1=Steel Blue, 2=Sage within each placement trio on Paula v2."""
     key = _normalize_fabric_key(fabric_name)
     if "steel" in key:
         return 1
@@ -1308,25 +1300,26 @@ def resolve_backpack_v2_page_index(
     placement: str | None = None,
     fabric_name: str | None = None,
 ) -> int:
-    """0-based page index into Paula v2 PDF via BACKPACK_PAGE_MAP.
+    """0-based page index into Paula v2 PDF (placement base + fabric offset).
 
-    ``fabric_name`` is accepted for API compatibility but ignored — each
-    Artwork placement maps to one complete static Option page.
+    Layout geometry comes from the mapped Option page; fabric selects the
+    matching colorway page in the same placement trio (e.g. #1/#2/#3).
     """
-    _ = fabric_name  # direct page map is placement-only
     from utils.catalog import resolve_backpack_placement
 
     place = resolve_backpack_placement(placement)
     label = str(place.get("label") or "").strip()
-    if label in BACKPACK_PAGE_MAP:
-        return int(BACKPACK_PAGE_MAP[label])
     key = str(place.get("key") or "upper_center")
-    if key in BACKPACK_PAGE_MAP_BY_KEY:
-        return int(BACKPACK_PAGE_MAP_BY_KEY[key])
     token = str(placement or "").strip()
-    if token in BACKPACK_PAGE_MAP:
-        return int(BACKPACK_PAGE_MAP[token])
-    return int(BACKPACK_PAGE_MAP_BY_KEY.get(key, 0))
+    if label in BACKPACK_PAGE_MAP:
+        base = int(BACKPACK_PAGE_MAP[label])
+    elif key in BACKPACK_PAGE_MAP_BY_KEY:
+        base = int(BACKPACK_PAGE_MAP_BY_KEY[key])
+    elif token in BACKPACK_PAGE_MAP:
+        base = int(BACKPACK_PAGE_MAP[token])
+    else:
+        base = int(BACKPACK_PAGE_MAP_BY_KEY.get(key, 0))
+    return int(base + backpack_v2_fabric_offset(fabric_name))
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:
