@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 88
+STAMP_VERSION = 89
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -273,14 +273,22 @@ def _run_app() -> None:
             fabric = None
 
         # Fabric → logo ink default (umbrella + backpack). Preserve Match uploaded art.
+        # Token includes family so switching product category re-applies the default
+        # even when the fabric name stays the same (e.g. Black on umbrella → backpack).
         fabric_sync_key = f"_fabric_for_logo_{FORM_KEY}"
-        if fabric and st.session_state.get(fabric_sync_key) != fabric:
+        sync_token = (family or "", fabric or "")
+        if fabric and st.session_state.get(fabric_sync_key) != sync_token:
             current = st.session_state.get(logo_key)
             if current != "Match uploaded art":
                 st.session_state[logo_key] = default_logo_color_for_fabric(fabric)
-            st.session_state[fabric_sync_key] = fabric
+            st.session_state[fabric_sync_key] = sync_token
 
         logo_options = logo_color_names()
+        # Drop a stale / invalid logo value so the selectbox cannot stay stuck.
+        if st.session_state.get(logo_key) not in (None, *logo_options):
+            st.session_state[logo_key] = (
+                default_logo_color_for_fabric(fabric) if fabric else None
+            )
         logo_color = st.selectbox(
             "Logo / graphic color",
             logo_options,

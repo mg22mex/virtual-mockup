@@ -52,6 +52,13 @@ def default_logo_color_for_fabric(fabric_name: str | None) -> str:
     key = " ".join(str(fabric_name or "").lower().split())
     if "white" in key:
         return "Pantone Black C"
+    rec = fabric_record(fabric_name or "")
+    rgb = rec.get("rgb")
+    if isinstance(rgb, (list, tuple)) and len(rgb) >= 3:
+        r, g, b = (int(rgb[0]) / 255.0, int(rgb[1]) / 255.0, int(rgb[2]) / 255.0)
+        # Relative luminance — pale fabrics need black ink for contrast.
+        if (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.72:
+            return "Pantone Black C"
     return "Pantone White C"
 
 
@@ -92,15 +99,15 @@ def fabrics_for_styles(keys: list[str], core_only: bool = False) -> list[str]:
 
 
 def fabric_caption(name: str) -> str:
+    """Sidebar / export label: ``Black (NRF 001) - 19-0303 TCX``."""
     rec = fabric_record(name)
-    bits = [name]
-    if rec.get("pantone"):
-        bits.append(str(rec["pantone"]))
-    if rec.get("nrf") and f"(NRF {rec['nrf']})" not in name:
-        bits.append(f"NRF {rec['nrf']}")
+    pantone = rec.get("pantone")
+    caption = f"{name} - {pantone}" if pantone else str(name)
+    if rec.get("nrf") and f"(NRF {rec['nrf']})" not in str(name):
+        caption = f"{caption} · NRF {rec['nrf']}"
     if rec.get("kind") == "pattern":
-        bits.append("pattern")
-    return " · ".join(bits)
+        caption = f"{caption} · pattern"
+    return caption
 
 
 def fabric_sheet_lines(name: str) -> list[str]:
@@ -118,8 +125,13 @@ def fabric_sheet_lines(name: str) -> list[str]:
 
 
 def fabric_sheet_label(name: str) -> str:
-    """Single-line Fabric Colors label matching Paula sheets (no Pantone sub-line)."""
-    return fabric_sheet_lines(name)[0]
+    """Single-line Fabric Colors label for worksheets (name + TCX when known)."""
+    rec = fabric_record(name)
+    pantone = rec.get("pantone")
+    base = fabric_sheet_lines(name)[0]
+    if pantone and str(pantone) not in base:
+        return f"{base} - {pantone}"
+    return base
 
 
 def logo_sheet_label(name: str) -> str:
