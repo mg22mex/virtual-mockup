@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 91
+STAMP_VERSION = 92
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -277,10 +277,11 @@ def _run_app() -> None:
             key=f"logo_color_{FORM_KEY}",
         )
         knockout_mode = logo_knockout_mode(logo_color) if logo_color else "none"
-        if logo_color and knockout_mode == "none":
-            st.caption("Uploaded artwork colors are kept as-is.")
-        elif logo_color:
-            st.caption("Uploaded art is recolored to the selected print color.")
+        if family != "backpack":
+            if logo_color and knockout_mode == "none":
+                st.caption("Uploaded artwork colors are kept as-is.")
+            elif logo_color:
+                st.caption("Uploaded art is recolored to the selected print color.")
         ext_list = [e.lstrip(".") for e in SUPPORTED_EXTS]
         if "logo_uploader_id" not in st.session_state:
             st.session_state["logo_uploader_id"] = 0
@@ -374,19 +375,26 @@ def _run_app() -> None:
     logo_name = st.session_state.get("logo_name")
 
     if logo_bytes and logo_name:
-        try:
-            color_override = None if job.logo_color_name == "Match uploaded art" else job.logo_hex
-            logo = load_artwork(logo_bytes, logo_name, color_override=color_override)
-        except VectorLoadError as exc:
-            st.error(str(exc))
-            return
         stamp = date.today().isoformat()
         saved = LOGO_DIR / f"{job.client.replace(' ', '_')}_{stamp}_{Path(logo_name).name}"
         if st.session_state.get("_saved_logo") != saved.name:
             saved.write_bytes(logo_bytes)
             logger.log("logo_upload", {"client": job.client, "file": saved.name, "bytes": len(logo_bytes)})
             st.session_state["_saved_logo"] = saved.name
-    else:
+        if family == "backpack":
+            # File kept on the ticket only — never recolored or stamped on the Paula page.
+            pass
+        else:
+            try:
+                color_override = (
+                    None if job.logo_color_name == "Match uploaded art" else job.logo_hex
+                )
+                logo = load_artwork(logo_bytes, logo_name, color_override=color_override)
+            except VectorLoadError as exc:
+                st.error(str(exc))
+                return
+            st.success(f"Using uploaded artwork: `{logo_name}` · {job.logo_color_name}")
+    elif family != "backpack":
         st.info("No client logo uploaded. Official Proper marks are removed; upload SVG/AI/CDR/PDF/EPS to stamp.")
 
     logo_fp = _logo_fingerprint(logo_bytes, logo_name)
@@ -451,7 +459,7 @@ def _run_app() -> None:
             )
             + f"  \n**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
         )
-        if not logo:
+        if family != "backpack" and not logo:
             st.caption("No upload yet — Generate exports the worksheet with logo slots cleared.")
         generate = st.button(
             "Generate production worksheet PDF",
