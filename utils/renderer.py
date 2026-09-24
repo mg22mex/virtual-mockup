@@ -111,23 +111,41 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
 
 # Graphic Sample line-art stamp anchors (PDF points) — centers of Paula v2 marks.
 BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
-    # Raised toward top zipper so Option #1 sits on the upper chest panel.
-    "upper_center": (1041.5, 2195.0),
-    # Dead-center of the front panel (Paula page 4).
+    # Just under the top zipper on the upper chest panel (raised vs Paula baked).
+    "upper_center": (1041.5, 2020.0),
+    # Dead-center of the front panel (Paula Options #4–#6).
     "center": (1041.5, 2430.0),
-    # Lower-right pocket, adjacent to Weatherman mark (Paula pages 7–9).
-    "lower_right_center": (1245.0, 2809.0),
+    # Lower-right pocket center (Paula Options #7–#9 measured Proper).
+    "lower_right_center": (1137.5, 2809.0),
 }
 
-# Paula v2 PDF vector path — measured baked-mark anchors (exact page coords).
-# Raster BACKPACK_FRONT_OVERLAYS / DRAW_CENTERS stay for the Illustrator PNG pipeline;
-# upper_center there is intentionally raised. PDF overlays must hit Paula's marks.
+# Paula v2 PDF vector path — stamp anchors (72 DPI PDF points).
+# upper_center is raised to the top chest panel (under zipper ~y1960); Paula's
+# baked Option #1 mark sits at ~y2283 on the mid panel and is wiped separately.
 BACKPACK_PDF_DRAW_CENTERS: dict[str, tuple[float, float]] = {
-    "upper_center": (1041.5, 2283.0),
+    # Just under the top zipper on the upper chest panel.
+    "upper_center": (1041.5, 2020.0),
     "center": (1041.5, 2430.0),
-    # Toward lower-right pocket / right seam — left of zipper, right of Weatherman.
-    "lower_right_center": (1245.0, 2809.0),
+    # Lower-right pocket — Paula Options #7–#9 Proper letter bbox center.
+    "lower_right_center": (1137.5, 2809.0),
 }
+
+# Paula's baked Graphic Sample marks to wipe before stamping (x, y, w, h).
+# Measured from white letter path unions on Options #1 / #4 / #7 (+ pad).
+BACKPACK_PDF_BAKED_GS_COVERS: dict[str, tuple[float, float, float, float]] = {
+    "upper_center": (868.0, 2228.0, 352.0, 110.0),
+    "center": (868.0, 2375.0, 352.0, 110.0),
+    "lower_right_center": (1040.0, 2775.0, 196.0, 68.0),
+}
+
+# Weatherman brand mark on the flat vector (bottom-left) — cleared as a ghost.
+# Icon ~x766–798, word ~x803–913, y~2810–2843 (avoid mesh pocket left of ~750).
+BACKPACK_PDF_WEATHERMAN_COVER: tuple[float, float, float, float] = (
+    755.0,
+    2800.0,
+    170.0,
+    50.0,
+)
 
 # Front photo slots on the v2 PDF (72 DPI points), measured per Options #1–#9.
 # rotate: PIL CCW degrees matching Paula's foreshortened panel incline.
@@ -176,20 +194,20 @@ BACKPACK_PDF_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
         "black": {
             # Toward right seam of the front panel; cover clears Paula's baked mark
             # without extending onto the white studio backdrop.
-            "box": (680.0, 1188.0, 95.0, 38.0),
-            "cover": (610.0, 1168.0, 180.0, 65.0),
+            "box": (700.0, 1188.0, 95.0, 38.0),
+            "cover": (610.0, 1168.0, 200.0, 65.0),
             "erase": "photo",
             "rotate": 12.0,
         },
         "steel": {
-            "box": (660.0, 1182.0, 95.0, 38.0),
-            "cover": (600.0, 1165.0, 180.0, 65.0),
+            "box": (680.0, 1182.0, 95.0, 38.0),
+            "cover": (600.0, 1165.0, 200.0, 65.0),
             "erase": "photo",
             "rotate": 12.0,
         },
         "sage": {
-            "box": (660.0, 1182.0, 95.0, 38.0),
-            "cover": (600.0, 1165.0, 180.0, 65.0),
+            "box": (680.0, 1182.0, 95.0, 38.0),
+            "cover": (600.0, 1165.0, 200.0, 65.0),
             "erase": "photo",
             "rotate": 12.0,
         },
@@ -201,11 +219,11 @@ BACKPACK_PDF_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
 BACKPACK_DIM_LAYOUTS: dict[str, dict[str, Any]] = {
     "upper_center": {
         "h_line": (885.7, 3016.1, 1197.3, 3016.1),
-        "v_line": (1495.2, 2157.0, 1495.2, 2233.0),
+        "v_line": (1495.2, 1982.0, 1495.2, 2058.0),
         "width_value": (986.7, 2960.3, 110.0, 44.2),
         "width_caption": (948.0, 3023.2, 190.0, 36.0),
-        "height_value": (1439.7, 2147.0, 44.2, 96.3),
-        "height_caption": (1508.6, 2103.0, 36.0, 184.3),
+        "height_value": (1439.7, 1972.0, 44.2, 96.3),
+        "height_caption": (1508.6, 1928.0, 36.0, 184.3),
     },
     "center": {
         "h_line": (885.7, 3016.1, 1197.3, 3016.1),
@@ -1171,8 +1189,17 @@ def get_backpack_pdf_front_slot(
     return dict(slot or by_color["black"])
 
 
+def backpack_pdf_baked_gs_cover(placement: str | None = None) -> tuple[float, float, float, float]:
+    """Paula baked Graphic Sample mark cover for the active placement page."""
+    from utils.catalog import resolve_backpack_placement
+
+    place = resolve_backpack_placement(placement)
+    key = str(place.get("key") or "upper_center")
+    return BACKPACK_PDF_BAKED_GS_COVERS.get(key, BACKPACK_PDF_BAKED_GS_COVERS["upper_center"])
+
+
 def backpack_pdf_draw_center(placement: str | None = None) -> tuple[float, float]:
-    """Graphic Sample stamp center on the Paula v2 PDF (exact baked-mark anchor)."""
+    """Graphic Sample stamp center on the Paula v2 PDF vector overlay path."""
     from utils.catalog import resolve_backpack_placement
 
     place = resolve_backpack_placement(placement)

@@ -36,12 +36,14 @@ from .renderer import (
     backpack_artwork_cm,
     backpack_dim_layout,
     backpack_draw_center,
+    backpack_pdf_baked_gs_cover,
     backpack_pdf_draw_center,
     backpack_v2_pdf_path,
     fit_logo_uniform,
     get_backpack_front_slot,
     get_backpack_pdf_front_slot,
     resolve_backpack_v2_page_index,
+    BACKPACK_PDF_WEATHERMAN_COVER,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -585,30 +587,10 @@ class WorksheetExporter:
         art_w, art_h = backpack_artwork_cm(place_key)
         center = backpack_pdf_draw_center(place_key)
         draw_box = _cm_box(*center, art_w, art_h)
-        # Tight wipe on the baked sample only — keep the Weatherman mark intact.
-        line_pad = 8.0 if place_key == "lower_right_center" else 6.0
-        line_cover = (
-            draw_box[0] - line_pad,
-            draw_box[1] - line_pad,
-            draw_box[2] + 2 * line_pad,
-            draw_box[3] + 2 * line_pad,
-        )
-        if place_key == "lower_right_center":
-            # One plate from Weatherman through the stamp box — kills leftover glyphs.
-            wipe = (820.0, 2775.0, 540.0, 75.0)
-            line_fill = self._pdf_sample_fill(page, wipe, fallback=fabric)
-            self._pdf_opaque_wipe(page, wipe, line_fill)
-            if mark is not None:
-                self._pdf_insert_mark(page, draw_box, mark, rotate=0)
-        else:
-            # Inpaint clears vector Proper glyphs without a flat fabric plate.
-            self._pdf_overlay_logo_slot(
-                page,
-                {"box": draw_box, "cover": line_cover, "rotate": 0},
-                mark,
-                cover_rgb=fabric,
-                heal=True,
-            )
+        # Clean flat vector: wipe Weatherman ghost + Paula's baked sample, then stamp.
+        self._pdf_clear_backpack_gs_vector(page, place_key, draw_box, fabric)
+        if mark is not None:
+            self._pdf_insert_mark(page, draw_box, mark, rotate=0)
 
         # Paula bakes "*artwork on the upper center" on every Options page — rewrite.
         self._pdf_overlay_place_callout(page, place)
@@ -791,6 +773,63 @@ class WorksheetExporter:
             fit_pad=float(slot.get("fit_pad") or 0.14),
             crisp=bool(slot.get("crisp")),
         )
+
+    @staticmethod
+    def _pdf_union_boxes(
+        a: tuple[float, float, float, float],
+        b: tuple[float, float, float, float],
+        *rest: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        boxes = (a, b, *rest)
+        xs0, ys0, xs1, ys1 = [], [], [], []
+        for box in boxes:
+            x, y, w, h = (float(v) for v in box)
+            xs0.append(x)
+            ys0.append(y)
+            xs1.append(x + w)
+            ys1.append(y + h)
+        x0, y0 = min(xs0), min(ys0)
+        return (x0, y0, max(xs1) - x0, max(ys1) - y0)
+
+    def _pdf_clear_backpack_gs_vector(
+        self,
+        page,
+        place_key: str,
+        draw_box: tuple[float, float, float, float],
+        fabric: tuple[int, int, int],
+    ) -> None:
+        """Wipe Weatherman ghost + Paula baked Proper before stamping client art.
+
+        Always clears the baked GS mark and the bottom Weatherman ghost. Only
+        paints a stamp-area plate when the stamp overlaps those marks (e.g.
+        lower-right). Raised Option #1 stamps sit on clean fabric under the
+        zipper, so wiping there would leave a visible gray plate.
+        """
+        pad = 8.0
+        stamp_cover = (
+            draw_box[0] - pad,
+            draw_box[1] - pad,
+            draw_box[2] + 2 * pad,
+            draw_box[3] + 2 * pad,
+        )
+        baked = backpack_pdf_baked_gs_cover(place_key)
+        wm = BACKPACK_PDF_WEATHERMAN_COVER
+        stamp_bottom = stamp_cover[1] + stamp_cover[3]
+        stamp_top = stamp_cover[1]
+        baked_top = baked[1]
+        baked_bottom = baked[1] + baked[3]
+        overlaps_baked = stamp_bottom >= baked_top - 24 and stamp_top <= baked_bottom + 24
+        if place_key == "lower_right_center":
+            # Stamp sits beside Weatherman — one combined plate.
+            plates = [self._pdf_union_boxes(baked, stamp_cover, wm)]
+        elif overlaps_baked:
+            plates = [self._pdf_union_boxes(baked, stamp_cover), wm]
+        else:
+            # Raised upper_center: wipe mid baked + bottom ghost only.
+            plates = [baked, wm]
+        for plate in plates:
+            fill = self._pdf_sample_fill(page, plate, fallback=fabric)
+            self._pdf_opaque_wipe(page, plate, fill)
 
     def _pdf_opaque_wipe(
         self,
