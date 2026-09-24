@@ -1270,8 +1270,32 @@ def backpack_v2_pdf_path() -> Path | None:
     return None
 
 
+# Artwork placement label → 0-based page index in Paula v2 PDF.
+# Pages are complete worksheets — select by placement only (no coordinate stamps).
+BACKPACK_PAGE_MAP: dict[str, int] = {
+    "Upper center": 0,  # Option #1
+    "Upper left": 1,  # Option #2
+    "Upper right": 2,  # Option #3
+    "Center": 3,  # Option #4
+    "Lower center": 4,  # Option #5
+    "Lower left center": 5,  # Option #6
+    "Lower right center": 6,  # Option #7
+}
+
+# Placement keys (catalog) → same page indexes as BACKPACK_PAGE_MAP labels.
+BACKPACK_PAGE_MAP_BY_KEY: dict[str, int] = {
+    "upper_center": 0,
+    "upper_left": 1,
+    "upper_right": 2,
+    "center": 3,
+    "lower_center": 4,
+    "lower_left_center": 5,
+    "lower_right_center": 6,
+}
+
+
 def backpack_v2_fabric_offset(fabric_name: str | None) -> int:
-    """0=Black, 1=Steel Blue, 2=Sage — matches Paula Options #1/#2/#3 stride."""
+    """Legacy fabric offset (unused by direct page mapping). Kept for callers."""
     key = _normalize_fabric_key(fabric_name)
     if "steel" in key:
         return 1
@@ -1284,17 +1308,25 @@ def resolve_backpack_v2_page_index(
     placement: str | None = None,
     fabric_name: str | None = None,
 ) -> int:
-    """0-based page index into Paula v2 PDF (Options #1–#9 → pages 0–8)."""
+    """0-based page index into Paula v2 PDF via BACKPACK_PAGE_MAP.
+
+    ``fabric_name`` is accepted for API compatibility but ignored — each
+    Artwork placement maps to one complete static Option page.
+    """
+    _ = fabric_name  # direct page map is placement-only
     from utils.catalog import resolve_backpack_placement
 
     place = resolve_backpack_placement(placement)
+    label = str(place.get("label") or "").strip()
+    if label in BACKPACK_PAGE_MAP:
+        return int(BACKPACK_PAGE_MAP[label])
     key = str(place.get("key") or "upper_center")
-    base = {
-        "upper_center": 0,
-        "center": 3,
-        "lower_right_center": 6,
-    }.get(key, 0)
-    return int(base + backpack_v2_fabric_offset(fabric_name))
+    if key in BACKPACK_PAGE_MAP_BY_KEY:
+        return int(BACKPACK_PAGE_MAP_BY_KEY[key])
+    token = str(placement or "").strip()
+    if token in BACKPACK_PAGE_MAP:
+        return int(BACKPACK_PAGE_MAP[token])
+    return int(BACKPACK_PAGE_MAP_BY_KEY.get(key, 0))
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:
