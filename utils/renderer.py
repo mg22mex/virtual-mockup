@@ -1270,15 +1270,15 @@ def backpack_v2_pdf_path() -> Path | None:
     return None
 
 
-# Artwork placement label → Black (NRF 001) Option page in Paula v2 PDF.
-# Steel Blue / Sage use the same layout at +1 / +2 (Options #2/#3, #5/#6, #8/#9).
+# Artwork placement label → 0-based page index in Paula v2 PDF (static extract).
+# Fabric / logo color are job-ticket metadata only — they do not shift this map.
 BACKPACK_PAGE_MAP: dict[str, int] = {
-    "Upper center": 0,  # Graphic Sample Option #1
-    "Center": 3,  # Graphic Sample Option #4
-    "Lower right center": 6,  # Graphic Sample Option #7
+    "Upper center": 0,  # Graphic Sample Option #1 (page 1)
+    "Center": 3,  # Graphic Sample Option #4 (page 4)
+    "Lower right center": 6,  # Graphic Sample Option #7 (page 7)
 }
 
-# Placement keys (catalog) → same Black-page indexes as BACKPACK_PAGE_MAP.
+# Placement keys (catalog) → same page indexes as BACKPACK_PAGE_MAP.
 BACKPACK_PAGE_MAP_BY_KEY: dict[str, int] = {
     "upper_center": 0,
     "center": 3,
@@ -1287,12 +1287,8 @@ BACKPACK_PAGE_MAP_BY_KEY: dict[str, int] = {
 
 
 def backpack_v2_fabric_offset(fabric_name: str | None) -> int:
-    """0=Black, 1=Steel Blue, 2=Sage within each placement trio on Paula v2."""
-    key = _normalize_fabric_key(fabric_name)
-    if "steel" in key:
-        return 1
-    if "sage" in key:
-        return 2
+    """Legacy colorway stride — unused by frozen static page extract."""
+    _ = fabric_name
     return 0
 
 
@@ -1300,11 +1296,13 @@ def resolve_backpack_v2_page_index(
     placement: str | None = None,
     fabric_name: str | None = None,
 ) -> int:
-    """0-based page index into Paula v2 PDF (placement base + fabric offset).
+    """0-based page index into Paula v2 PDF from Artwork placement only.
 
-    Layout geometry comes from the mapped Option page; fabric selects the
-    matching colorway page in the same placement trio (e.g. #1/#2/#3).
+    Upper center → Option #1, Center → #4, Lower right center → #7.
+    ``fabric_name`` is accepted for API compatibility but ignored — fabric and
+    logo colors stay on the job ticket / export summary, not the canvas.
     """
+    _ = fabric_name
     from utils.catalog import resolve_backpack_placement
 
     place = resolve_backpack_placement(placement)
@@ -1312,14 +1310,12 @@ def resolve_backpack_v2_page_index(
     key = str(place.get("key") or "upper_center")
     token = str(placement or "").strip()
     if label in BACKPACK_PAGE_MAP:
-        base = int(BACKPACK_PAGE_MAP[label])
-    elif key in BACKPACK_PAGE_MAP_BY_KEY:
-        base = int(BACKPACK_PAGE_MAP_BY_KEY[key])
-    elif token in BACKPACK_PAGE_MAP:
-        base = int(BACKPACK_PAGE_MAP[token])
-    else:
-        base = int(BACKPACK_PAGE_MAP_BY_KEY.get(key, 0))
-    return int(base + backpack_v2_fabric_offset(fabric_name))
+        return int(BACKPACK_PAGE_MAP[label])
+    if key in BACKPACK_PAGE_MAP_BY_KEY:
+        return int(BACKPACK_PAGE_MAP_BY_KEY[key])
+    if token in BACKPACK_PAGE_MAP:
+        return int(BACKPACK_PAGE_MAP[token])
+    return int(BACKPACK_PAGE_MAP_BY_KEY.get(key, 0))
 
 
 def _resolve_local_front_photo(*candidates: Path) -> Path | None:
