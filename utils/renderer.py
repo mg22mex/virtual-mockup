@@ -119,12 +119,15 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
     "lower_right_center": (1137.5, 2809.0),
 }
 
-# Paula v2 PDF vector path — stamp anchors over baked Graphic Sample marks.
-# Centers match Paula letter bboxes so recolored client art replaces the sample.
+# Paula v2 PDF vector path — stamp anchors (72 DPI PDF points).
+# upper_center is raised to the top chest panel (under zipper ~y1960); Paula's
+# baked Option #1 mark sits at ~y2283 on the mid panel and is wiped separately.
 BACKPACK_PDF_DRAW_CENTERS: dict[str, tuple[float, float]] = {
-    "upper_center": (1044.0, 2283.0),  # Options #1–#3
-    "center": (1044.0, 2430.0),  # Options #4–#6
-    "lower_right_center": (1137.5, 2809.0),  # Options #7–#9
+    # Just under the top zipper on the upper chest panel.
+    "upper_center": (1041.5, 2020.0),
+    "center": (1041.5, 2430.0),
+    # Lower-right pocket — Paula Options #7–#9 Proper letter bbox center.
+    "lower_right_center": (1137.5, 2809.0),
 }
 
 # Paula's baked Graphic Sample marks to wipe before stamping (x, y, w, h).

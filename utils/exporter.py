@@ -506,25 +506,20 @@ class WorksheetExporter:
         job: JobSpec,
         logo: PILImage.Image | None,
     ) -> bytes:
-        """Venture Dry Pack — Paula v2 page + recolored client logo overlay.
+        """Venture Dry Pack — extract Paula v2 Option page by placement × fabric.
 
-        Selects Options #1–#9 by placement × fabric for layout/colorway, then
-        stamps the uploaded mark (SVG recolored via ``recolor_svg_artwork`` /
-        ``prepare_logo``) over Paula's baked Graphic Sample placeholders.
-        Falls back to the raster Illustrator pipeline when the v2 PDF is missing.
+        Layout geometry comes from the mapped Option page (Upper center → #1,
+        Center → #4, Lower right center → #7). Fabric / pattern color selects
+        the matching colorway page in that trio (#2/#3, #5/#6, #8/#9).
+        ``logo`` is unused (API compat). Falls back to the raster Illustrator
+        pipeline when the v2 PDF is missing.
         """
         import fitz
 
+        _ = logo  # static page extract — artwork/colorway baked into Paula's PDF
         pdf_path = backpack_v2_pdf_path()
         if pdf_path is None:
-            return self.render_standard_canvas(job, logo)
-
-        mark = None
-        if logo is not None:
-            fill = None
-            if job.logo_color_name != "Match uploaded art":
-                fill = logo_color_rgb(job.logo_color_name)
-            mark = self.renderer.prepare_logo(logo, job.resolved_knockout(), fill_rgb=fill)
+            return self.render_standard_canvas(job, None)
 
         page_index = resolve_backpack_v2_page_index(job.panel_config, job.fabric_name)
         src = fitz.open(pdf_path)
@@ -535,62 +530,6 @@ class WorksheetExporter:
             doc.insert_pdf(src, from_page=page_index, to_page=page_index)
         finally:
             src.close()
-
-        page = doc[0]
-        place = resolve_backpack_placement(job.panel_config)
-        place_key = str(place.get("key") or "upper_center")
-        fabric = job.fabric_rgb
-        spec = self._page_spec("backpack", 1)
-
-        # --- Header metadata + project chip (Paula coords, top-left origin) ---
-        self._pdf_overlay_header(page, spec, job)
-        self._pdf_overlay_chip(page, spec, job)
-
-        # --- Color swatches / labels (keep page fabric; refresh logo color + copy) ---
-        self._pdf_overlay_colors(page, spec, job)
-
-        # --- Artwork card + front photo + line-art logos ---
-        art_slot = next(
-            (s for s in spec["logos"] if str(s.get("erase") or "") == "artwork"),
-            None,
-        )
-        if art_slot:
-            self._pdf_overlay_artwork_card(page, art_slot, mark, job)
-
-        front = get_backpack_pdf_front_slot(job.fabric_name, place_key)
-        front_box = tuple(float(v) for v in front["box"])
-        front_cover = tuple(float(v) for v in (front.get("cover") or front_box))
-        if place_key == "lower_right_center":
-            baked_cover = (618.0, 1178.0, 92.0, 48.0)
-            baked_fill = self._pdf_sample_fill(page, baked_cover, fallback=fabric)
-            self._pdf_opaque_wipe(page, baked_cover, baked_fill)
-            if mark is not None:
-                self._pdf_insert_mark(
-                    page,
-                    front_box,
-                    mark,
-                    rotate=float(front.get("rotate") or 0),
-                )
-        else:
-            self._pdf_overlay_logo_slot(
-                page,
-                {
-                    "box": front_box,
-                    "cover": front_cover,
-                    "rotate": float(front.get("rotate") or 0),
-                },
-                mark,
-                cover_rgb=fabric,
-            )
-
-        art_w, art_h = backpack_artwork_cm(place_key)
-        center = backpack_pdf_draw_center(place_key)
-        draw_box = _cm_box(*center, art_w, art_h)
-        self._pdf_clear_backpack_gs_vector(page, place_key, draw_box, fabric)
-        if mark is not None:
-            self._pdf_insert_mark(page, draw_box, mark, rotate=0)
-
-        self._pdf_overlay_place_callout(page, place)
 
         meta = doc.metadata or {}
         meta.update(
