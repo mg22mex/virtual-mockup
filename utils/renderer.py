@@ -248,6 +248,9 @@ HEADER_BG = (246, 245, 243)
 WHITE = (255, 255, 255)
 PANTONE_WHITE_C = (255, 255, 255)
 PANTONE_BLACK_C = (45, 41, 38)
+# Pure print fills for backpack Front View in-place recolor (sheet proofing).
+LOGO_FILL_BLACK = (0, 0, 0)  # #000000
+LOGO_FILL_WHITE = (255, 255, 255)  # #FFFFFF
 
 FABRIC_COLORS: dict[str, tuple[int, int, int]] = fabric_rgb_map()
 PRODUCT_CATALOG: dict[str, dict[str, Any]] = product_specs()
@@ -1187,6 +1190,66 @@ def get_backpack_pdf_front_slot(
     else:
         slot = by_color.get("black")
     return dict(slot or by_color["black"])
+
+
+def backpack_logo_fill_rgb(logo_color_name: str | None) -> tuple[int, int, int] | None:
+    """Return in-place Front View / vector fill for Logo / graphic color.
+
+    - Pantone Black C → ``#000000``
+    - Pantone White C → ``#FFFFFF``
+    - Match uploaded art → ``None`` (keep native SVG / Paula baked ink)
+    - Other named inks → catalog RGB
+    """
+    from utils.catalog import logo_color_rgb
+
+    token = " ".join(str(logo_color_name or "").lower().replace("-", " ").split())
+    if not token or "match uploaded" in token:
+        return None
+    if "black" in token:
+        return LOGO_FILL_BLACK
+    if "white" in token:
+        return LOGO_FILL_WHITE
+    return logo_color_rgb(logo_color_name)
+
+
+def recolor_bright_ink_inplace(
+    image: Image.Image,
+    fill_rgb: tuple[int, int, int],
+    *,
+    bright_threshold: float = 165.0,
+) -> Image.Image:
+    """Recolor near-white logo ink to ``fill_rgb`` without shifting pixels.
+
+    Fabric / shadow pixels below ``bright_threshold`` stay untouched. Soft
+    anti-aliased glyph edges blend toward the fill so the mark does not grow
+    or shrink — position stays locked to Paula's baked footprint.
+    """
+    rgba = image.convert("RGBA")
+    arr = np.array(rgba)
+    rgb = arr[:, :, :3].astype(np.float32)
+    lum = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
+    dark_fill = max(int(fill_rgb[0]), int(fill_rgb[1]), int(fill_rgb[2])) < 80
+    if dark_fill:
+        # Dark print on dark fabric: kill white AA halos — treat mid-gray
+        # fringes as ink so #000000 does not leave a pale outline.
+        t0, t1 = 95.0, 210.0
+        weight = np.clip((lum - t0) / max(1.0, t1 - t0), 0.0, 1.0)
+        weight = np.where(lum >= 150.0, 1.0, weight)
+        ink = lum >= t0
+    else:
+        t0 = float(bright_threshold) - 35.0
+        t1 = 245.0
+        weight = np.clip((lum - t0) / max(1.0, t1 - t0), 0.0, 1.0)
+        ink = lum >= float(bright_threshold) - 35.0
+    if not np.any(ink):
+        return rgba
+    out = rgb.copy()
+    for c, v in enumerate(fill_rgb):
+        ch = out[:, :, c]
+        w = weight
+        out[:, :, c] = np.where(ink, ch * (1.0 - w) + float(v) * w, ch)
+    arr[:, :, :3] = np.clip(out, 0, 255).astype(np.uint8)
+    return Image.fromarray(arr, "RGBA")
 
 
 def backpack_pdf_baked_gs_cover(placement: str | None = None) -> tuple[float, float, float, float]:

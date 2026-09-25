@@ -36,12 +36,14 @@ from .renderer import (
     backpack_artwork_cm,
     backpack_dim_layout,
     backpack_draw_center,
+    backpack_logo_fill_rgb,
     backpack_pdf_baked_gs_cover,
     backpack_pdf_draw_center,
     backpack_v2_pdf_path,
     fit_logo_uniform,
     get_backpack_front_slot,
     get_backpack_pdf_front_slot,
+    recolor_bright_ink_inplace,
     resolve_backpack_v2_page_index,
     BACKPACK_PDF_WEATHERMAN_COVER,
 )
@@ -507,12 +509,13 @@ class WorksheetExporter:
         job: JobSpec,
         logo: PILImage.Image | None,
     ) -> bytes:
-        """Venture Dry Pack — Paula page + Artwork box / logo-swatch overlays only.
+        """Venture Dry Pack — Paula page + in-place logo fill + Artwork/swatch.
 
-        ``BACKPACK_STATIC_PAGE_MAP`` supplies the 1:1 page (Front View + tech pack
-        untouched). Only the Design Placement Artwork card and the bottom
-        Logo/Graphic Colors swatch + label follow ``Logo / graphic color``.
-        Falls back to the raster Illustrator pipeline when the v2 PDF is missing.
+        ``BACKPACK_STATIC_PAGE_MAP`` supplies the 1:1 page. Front View / tech-pack
+        coordinates stay frozen; when ``Logo / graphic color`` is Black or White C,
+        only the baked Proper ink in Paula's front-logo box is recolored in place
+        (no bbox / offset changes). Artwork card + Logo/Graphic Colors swatch still
+        follow the sidebar. Falls back to the raster pipeline if the v2 PDF is missing.
         """
         import fitz
 
@@ -520,12 +523,12 @@ class WorksheetExporter:
         if pdf_path is None:
             return self.render_standard_canvas(job, logo)
 
+        fill = backpack_logo_fill_rgb(job.logo_color_name)
         mark = None
         if logo is not None:
-            fill = None
-            if job.logo_color_name != "Match uploaded art":
-                fill = logo_color_rgb(job.logo_color_name)
-            mark = self.renderer.prepare_logo(logo, job.resolved_knockout(), fill_rgb=fill)
+            mark = self.renderer.prepare_logo(
+                logo, job.resolved_knockout(), fill_rgb=fill
+            )
 
         page_index = resolve_backpack_v2_page_index(job.panel_config, job.fabric_name)
         src = fitz.open(pdf_path)
@@ -540,7 +543,11 @@ class WorksheetExporter:
         page = doc[0]
         spec = self._page_spec("backpack", 1)
 
-        # Artwork preview box only (not Front View / GS diagram).
+        # In-place Front View Proper fill (locked Paula box — no stamp/heal).
+        if fill is not None and fill != (255, 255, 255):
+            self._pdf_recolor_front_logo_inplace(page, job, fill)
+
+        # Artwork preview box (black-on-light / white-on-dark).
         art_slot = next(
             (s for s in spec.get("logos") or [] if str(s.get("erase") or "") == "artwork"),
             None,
@@ -713,11 +720,12 @@ class WorksheetExporter:
         colors = spec.get("colors")
         if not colors or "logo_swatch" not in colors or "logo_label" not in colors:
             return
-        logo_rgb = logo_color_rgb(job.logo_color_name)
+        fill = backpack_logo_fill_rgb(job.logo_color_name)
         # Match uploaded art: neutral mid-gray chip (not a print color).
-        token = " ".join(str(job.logo_color_name or "").lower().split())
-        if "match uploaded" in token:
+        if fill is None:
             logo_rgb = (128, 128, 128)
+        else:
+            logo_rgb = fill
         self._pdf_fill_rect(page, colors["logo_swatch"], logo_rgb)
         if max(logo_rgb) > 210:
             page.draw_rect(
@@ -737,6 +745,40 @@ class WorksheetExporter:
             color=self._pdf_rgb(NAVY),
         )
 
+    def _pdf_recolor_front_logo_inplace(
+        self,
+        page,
+        job: JobSpec,
+        fill_rgb: tuple[int, int, int],
+    ) -> None:
+        """Recolor baked Front View Proper ink inside Paula's locked logo box.
+
+        No heal, wipe, or re-fit — only swaps near-white glyph pixels to
+        ``fill_rgb`` so X/Y/scale stay exactly as on the static page map.
+        """
+        import fitz
+
+        place = resolve_backpack_placement(job.panel_config)
+        place_key = str(place.get("key") or "upper_center")
+        front = get_backpack_pdf_front_slot(job.fabric_name, place_key)
+        box = front.get("box") or front.get("cover")
+        if not box:
+            return
+        x, y, w, h = (float(v) for v in box)
+        if w < 1 or h < 1:
+            return
+        rect = fitz.Rect(x, y, x + w, y + h)
+        # 2× sample keeps AA edges; write back into the same PDF-point rect.
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect, alpha=False)
+        img = PILImage.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        recolored = recolor_bright_ink_inplace(img, fill_rgb).convert("RGB")
+        page.insert_image(
+            rect,
+            stream=self._pdf_png_bytes(recolored),
+            keep_proportion=False,
+            overlay=True,
+        )
+
     def _pdf_overlay_artwork_card(
         self,
         page,
@@ -748,7 +790,11 @@ class WorksheetExporter:
         box = slot.get("box") or cover
         if not cover or not box:
             return
-        bg, border = artwork_preview_bg(job.logo_color_name, logo_color_rgb(job.logo_color_name))
+        fill = backpack_logo_fill_rgb(job.logo_color_name)
+        bg, border = artwork_preview_bg(
+            job.logo_color_name,
+            fill if fill is not None else logo_color_rgb(job.logo_color_name),
+        )
         self._pdf_fill_rect(page, cover, bg)
         page.draw_rect(
             self._pdf_rect(cover),
