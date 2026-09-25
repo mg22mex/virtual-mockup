@@ -1270,15 +1270,29 @@ def backpack_v2_pdf_path() -> Path | None:
     return None
 
 
-# Artwork placement label → Black (NRF 001) Option page in Paula v2 PDF.
-# Steel Blue / Sage use +1 / +2 so Front View photo + fabric swatches match.
-BACKPACK_PAGE_MAP: dict[str, int] = {
-    "Upper center": 0,  # Graphic Sample Option #1 (page 1)
-    "Center": 3,  # Graphic Sample Option #4 (page 4)
-    "Lower right center": 6,  # Graphic Sample Option #7 (page 7)
+# Direct (fabric family, placement label) → 0-based page in Paula v2 PDF.
+# Pages are complete worksheets — no stamp, tint, or coordinate overlays.
+BACKPACK_STATIC_PAGE_MAP: dict[tuple[str, str], int] = {
+    # Black (NRF 001)
+    ("black", "Upper center"): 0,  # Option #1
+    ("black", "Center"): 3,  # Option #4
+    ("black", "Lower right center"): 6,  # Option #7
+    # Steel Blue
+    ("steel", "Upper center"): 1,  # Option #2
+    ("steel", "Center"): 4,  # Option #5
+    ("steel", "Lower right center"): 7,  # Option #8
+    # Sage
+    ("sage", "Upper center"): 2,  # Option #3
+    ("sage", "Center"): 5,  # Option #6
+    ("sage", "Lower right center"): 8,  # Option #9
 }
 
-# Placement keys (catalog) → same Black-page indexes as BACKPACK_PAGE_MAP.
+# Legacy placement-only bases (Black pages) — kept for callers/docs.
+BACKPACK_PAGE_MAP: dict[str, int] = {
+    "Upper center": 0,
+    "Center": 3,
+    "Lower right center": 6,
+}
 BACKPACK_PAGE_MAP_BY_KEY: dict[str, int] = {
     "upper_center": 0,
     "center": 3,
@@ -1286,39 +1300,38 @@ BACKPACK_PAGE_MAP_BY_KEY: dict[str, int] = {
 }
 
 
-def backpack_v2_fabric_offset(fabric_name: str | None) -> int:
-    """0=Black, 1=Steel Blue, 2=Sage within each placement trio on Paula v2."""
+def _backpack_fabric_family(fabric_name: str | None) -> str:
+    """Normalize fabric name to static-map key: black | steel | sage."""
     key = _normalize_fabric_key(fabric_name)
     if "steel" in key:
-        return 1
+        return "steel"
     if "sage" in key:
-        return 2
-    return 0
+        return "sage"
+    return "black"
+
+
+def backpack_v2_fabric_offset(fabric_name: str | None) -> int:
+    """0=Black, 1=Steel Blue, 2=Sage — derived from BACKPACK_STATIC_PAGE_MAP."""
+    return {"black": 0, "steel": 1, "sage": 2}.get(_backpack_fabric_family(fabric_name), 0)
 
 
 def resolve_backpack_v2_page_index(
     placement: str | None = None,
     fabric_name: str | None = None,
 ) -> int:
-    """0-based page index into Paula v2 PDF (placement base + fabric offset).
+    """0-based page index via BACKPACK_STATIC_PAGE_MAP (fabric × placement).
 
-    Placement locks Option #1 / #4 / #7 geometry; fabric selects the matching
-    colorway page (#2/#3, #5/#6, #8/#9) so Front View and swatches update.
+    Exact Paula Option pages only — no coordinate stamps or canvas tinting.
     """
     from utils.catalog import resolve_backpack_placement
 
     place = resolve_backpack_placement(placement)
-    label = str(place.get("label") or "").strip()
+    label = str(place.get("label") or "Upper center").strip()
+    fabric = _backpack_fabric_family(fabric_name)
+    if (fabric, label) in BACKPACK_STATIC_PAGE_MAP:
+        return int(BACKPACK_STATIC_PAGE_MAP[(fabric, label)])
     key = str(place.get("key") or "upper_center")
-    token = str(placement or "").strip()
-    if label in BACKPACK_PAGE_MAP:
-        base = int(BACKPACK_PAGE_MAP[label])
-    elif key in BACKPACK_PAGE_MAP_BY_KEY:
-        base = int(BACKPACK_PAGE_MAP_BY_KEY[key])
-    elif token in BACKPACK_PAGE_MAP:
-        base = int(BACKPACK_PAGE_MAP[token])
-    else:
-        base = int(BACKPACK_PAGE_MAP_BY_KEY.get(key, 0))
+    base = int(BACKPACK_PAGE_MAP_BY_KEY.get(key, BACKPACK_PAGE_MAP.get(label, 0)))
     return int(base + backpack_v2_fabric_offset(fabric_name))
 
 
