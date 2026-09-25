@@ -1237,20 +1237,12 @@ def recolor_bright_ink_inplace(
     # Expand 1–2 px so soft AA edges hitch a ride; fabric stays outside.
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     dilated = cv2.dilate(hard, kernel, iterations=2)
-    dist_inside = cv2.distanceTransform((dilated > 0).astype(np.uint8), cv2.DIST_L2, 3)
-    # Full opacity on true white + near core; taper only on the dilated rim.
     alpha = np.zeros(lum.shape, dtype=np.float32)
     alpha[hard > 0] = 255.0
-    rim = (dilated > 0) & (hard == 0)
-    if np.any(rim):
-        # Rim pixels that are still brighter than local fabric get strong cover.
-        fabric_ref = float(np.percentile(lum[dilated == 0], 50)) if np.any(dilated == 0) else 0.0
-        rim_ok = rim & (lum >= max(150.0, fabric_ref + 25.0))
-        alpha[rim_ok] = 255.0
-        # Very soft leftover rim fades out.
-        rim_soft = rim & ~rim_ok
-        if np.any(rim_soft):
-            alpha[rim_soft] = np.clip(dist_inside[rim_soft] / 2.0 * 180.0, 0.0, 180.0)
+    # Dilated rim: only cover pixels that are still bright ink / AA — never
+    # mid-tone fabric (Sage ~145), which would read as a dark rectangle.
+    rim = (dilated > 0) & (hard == 0) & (lum >= 185.0)
+    alpha[rim] = 255.0
     out = np.zeros_like(arr)
     out[:, :, 0] = int(fill_rgb[0])
     out[:, :, 1] = int(fill_rgb[1])
