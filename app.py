@@ -35,7 +35,7 @@ PANEL_OPTIONS = [
     "All-over 8 Panel",
 ]
 
-STAMP_VERSION = 95
+STAMP_VERSION = 96
 # Widget key namespace — bump to force a blank ticket on existing Cloud sessions.
 FORM_KEY = "blank2"
 FAMILY_OPTIONS = ["Umbrella", "Backpack", "Poncho"]
@@ -55,7 +55,7 @@ try:
     )
     from utils.exporter import WorksheetExporter, worksheet_filename
     from utils.project_guide import render_project_guide
-    from utils.renderer import JobSpec
+    from utils.renderer import JobSpec, resolve_backpack_v2_page_index
     from utils.vectors import SUPPORTED_EXTS, VectorLoadError, load_artwork
 except Exception:  # noqa: BLE001 — surface Cloud import crashes on-screen
     _import_tb = traceback.format_exc()
@@ -462,6 +462,12 @@ def _run_app() -> None:
                 if family == "backpack" and panel_config
                 else ""
             )
+            + (
+                f"  \n**Paula page:** Graphic Sample Option #"
+                f"{resolve_backpack_v2_page_index(panel_config, job.fabric_name) + 1}"
+                if family == "backpack" and panel_config
+                else ""
+            )
             + f"  \n**Pages ({len(page_plan)}):** {' · '.join(page_labels) or '—'}"
         )
         if family != "backpack" and not logo:
@@ -489,6 +495,8 @@ def _run_app() -> None:
                     "products": job.product_keys,
                     "pages": page_labels,
                     "fabric": job.fabric_name,
+                    "logo_color": job.logo_color_name,
+                    "placement": panel_config,
                     "file": out_name,
                     "bytes": len(pdf_bytes),
                 },

@@ -510,8 +510,9 @@ class WorksheetExporter:
     ) -> bytes:
         """Venture Dry Pack — exact Paula v2 Option page (fabric × placement).
 
-        Serves ``BACKPACK_STATIC_PAGE_MAP`` pages 1:1. No logo stamps, overlays,
-        Y-offsets, or canvas tinting. ``logo`` is unused (API compat).
+        Canvas is an unmodified ``insert_pdf`` of ``BACKPACK_STATIC_PAGE_MAP``.
+        Fabric / logo color affect only UI labels, export ticket text, and PDF
+        file metadata keywords — never stamps, tints, or Y-offsets on the page.
         Falls back to the raster Illustrator pipeline when the v2 PDF is missing.
         """
         import fitz
@@ -527,10 +528,12 @@ class WorksheetExporter:
             if page_index < 0 or page_index >= src.page_count:
                 page_index = 0
             doc = fitz.open()
+            # 1:1 page copy — Paula layout, Option titles, and logos untouched.
             doc.insert_pdf(src, from_page=page_index, to_page=page_index)
         finally:
             src.close()
 
+        # File metadata only (does not paint on the page canvas).
         meta = doc.metadata or {}
         meta.update(
             {
@@ -540,7 +543,8 @@ class WorksheetExporter:
                 "keywords": (
                     f"placement={job.panel_config};"
                     f"fabric={job.fabric_name};"
-                    f"logo={job.logo_color_name}"
+                    f"logo={job.logo_color_name};"
+                    f"paula_option=#{page_index + 1}"
                 ),
             }
         )
