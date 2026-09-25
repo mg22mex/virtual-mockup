@@ -106,19 +106,24 @@ def fabric_sheet_lines(name: str) -> list[str]:
 
 
 def fabric_sheet_label(name: str) -> str:
-    """Single-line Fabric Colors label matching Paula sheets (no Pantone sub-line)."""
-    return fabric_sheet_lines(name)[0]
+    """Single-line Fabric Colors label: ``Steel Blue - 2374 C / 18-3921 TCX``."""
+    rec = fabric_record(name)
+    pantone = rec.get("pantone")
+    base = fabric_sheet_lines(name)[0]
+    if pantone and str(pantone) not in base:
+        return f"{base} - {pantone}"
+    return base
 
 
 def logo_sheet_label(name: str) -> str:
-    """Short Logo/Graphic Colors label — Paula sheets use White / Black."""
+    """Logo/Graphic Colors label — Pantone White C / Black C / Match art."""
     token = " ".join(str(name or "").lower().replace("-", " ").split())
-    if "white" in token:
-        return "White"
-    if "black" in token:
-        return "Black"
     if "match uploaded" in token:
-        return "Match art"
+        return "Match uploaded art"
+    if "white" in token:
+        return "Pantone White C"
+    if "black" in token:
+        return "Pantone Black C"
     return str(name or "").strip() or "—"
 
 
