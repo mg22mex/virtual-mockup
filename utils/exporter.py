@@ -589,6 +589,7 @@ class WorksheetExporter:
             self._pdf_insert_mark(page, draw_box, mark, rotate=0)
 
         self._pdf_overlay_place_callout(page, place)
+        self._pdf_overlay_option_number(page, place_key)
 
         meta = doc.metadata or {}
         meta.update(
@@ -874,6 +875,29 @@ class WorksheetExporter:
             callout,
             fontsize=36,
             fontname="helv",
+            color=self._pdf_rgb(NAVY),
+        )
+
+    def _pdf_overlay_option_number(self, page, place_key: str) -> None:
+        """Force Graphic Sample Option #1 / #4 / #7 from Artwork placement.
+
+        Fabric colorways still use Paula pages #2/#3/… for Front View photos, but
+        the Option label always tracks placement (Upper center → #1, etc.).
+        """
+        import fitz
+
+        tag = backpack_option_label(place_key)
+        label = f"Option {tag}" if str(tag).startswith("#") else f"Option #{tag}"
+        # Measured on Options #1–#9 ("Option #N" under Graphic Sample).
+        option_box = (1660.0, 1725.0, 420.0, 110.0)
+        page.add_redact_annot(self._pdf_rect(option_box), fill=(1, 1, 1))
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+        x, y, _w, h = option_box
+        page.insert_text(
+            (x + 8.0, y + h * 0.72),
+            label,
+            fontsize=72,
+            fontname="hebo",
             color=self._pdf_rgb(NAVY),
         )
 

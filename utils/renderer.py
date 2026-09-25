@@ -111,8 +111,8 @@ BACKPACK_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
 
 # Graphic Sample line-art stamp anchors (PDF points) — centers of Paula v2 marks.
 BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
-    # Just under the top zipper on the upper chest panel (raised vs Paula baked).
-    "upper_center": (1041.5, 2020.0),
+    # Upper body panel below top zipper (clear of handle / zipper seam).
+    "upper_center": (1041.5, 2220.0),
     # Dead-center of the front panel (Paula Options #4–#6).
     "center": (1041.5, 2430.0),
     # Lower-right pocket center (Paula Options #7–#9 measured Proper).
@@ -120,11 +120,11 @@ BACKPACK_DRAW_CENTERS: dict[str, tuple[float, float]] = {
 }
 
 # Paula v2 PDF vector path — stamp anchors (72 DPI PDF points).
-# upper_center is raised to the top chest panel (under zipper ~y1960); Paula's
-# baked Option #1 mark sits at ~y2283 on the mid panel and is wiped separately.
+# upper_center sits in the upper body panel under the zipper (~y1960); Paula's
+# baked Option #1 mark (~y2283) is wiped separately before stamping.
 BACKPACK_PDF_DRAW_CENTERS: dict[str, tuple[float, float]] = {
-    # Just under the top zipper on the upper chest panel.
-    "upper_center": (1041.5, 2020.0),
+    # Upper body panel — clear of handle and zipper seam.
+    "upper_center": (1041.5, 2220.0),
     "center": (1041.5, 2430.0),
     # Lower-right pocket — Paula Options #7–#9 Proper letter bbox center.
     "lower_right_center": (1137.5, 2809.0),
@@ -219,11 +219,11 @@ BACKPACK_PDF_FRONT_OVERLAYS: dict[str, dict[str, dict[str, Any]]] = {
 BACKPACK_DIM_LAYOUTS: dict[str, dict[str, Any]] = {
     "upper_center": {
         "h_line": (885.7, 3016.1, 1197.3, 3016.1),
-        "v_line": (1495.2, 1982.0, 1495.2, 2058.0),
+        "v_line": (1495.2, 2182.0, 1495.2, 2258.0),
         "width_value": (986.7, 2960.3, 110.0, 44.2),
         "width_caption": (948.0, 3023.2, 190.0, 36.0),
-        "height_value": (1439.7, 1972.0, 44.2, 96.3),
-        "height_caption": (1508.6, 1928.0, 36.0, 184.3),
+        "height_value": (1439.7, 2172.0, 44.2, 96.3),
+        "height_caption": (1508.6, 2128.0, 36.0, 184.3),
     },
     "center": {
         "h_line": (885.7, 3016.1, 1197.3, 3016.1),

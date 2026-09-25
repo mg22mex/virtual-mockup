@@ -242,24 +242,16 @@ def resolve_backpack_placement(
     return rec
 
 
-def backpack_option_label(placement_key: str, fabric_name: str | None) -> str:
-    """Return Graphic Sample option tag (e.g. ``#4``) for placement × fabric."""
-    placements = backpack_placements()
-    rec = placements.get(placement_key) or {}
-    by_fabric = rec.get("option_by_fabric") or {}
-    fabric = str(fabric_name or "")
-    if fabric in by_fabric:
-        return str(by_fabric[fabric])
-    key = " ".join(fabric.lower().split())
-    for name, opt in by_fabric.items():
-        nk = " ".join(str(name).lower().split())
-        if key and (key == nk or key in nk or nk in key):
-            return str(opt)
-        if "steel" in key and "steel" in nk:
-            return str(opt)
-        if "sage" in key and "sage" in nk:
-            return str(opt)
-        if "black" in key and "black" in nk:
-            return str(opt)
-    opts = rec.get("options") or []
-    return str(opts[0]) if opts else ""
+def backpack_option_label(placement_key: str, fabric_name: str | None = None) -> str:
+    """Graphic Sample option tag from Artwork placement only.
+
+    Upper center → #1, Center → #4, Lower right center → #7. Fabric colorways
+    still select Paula pages #2/#3/#5/#6/#8/#9 for Front View / swatches, but the
+    worksheet always labels the placement option (not the fabric variant).
+    """
+    _ = fabric_name
+    return {
+        "upper_center": "#1",
+        "center": "#4",
+        "lower_right_center": "#7",
+    }.get(str(placement_key or ""), "#1")
