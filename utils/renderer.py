@@ -1216,40 +1216,47 @@ def recolor_bright_ink_inplace(
     image: Image.Image,
     fill_rgb: tuple[int, int, int],
     *,
-    bright_threshold: float = 165.0,
+    bright_threshold: float = 200.0,
 ) -> Image.Image:
-    """Recolor near-white logo ink to ``fill_rgb`` without shifting pixels.
+    """Build a transparent overlay that recolors near-white logo ink only.
 
-    Fabric / shadow pixels below ``bright_threshold`` stay untouched. Soft
-    anti-aliased glyph edges blend toward the fill so the mark does not grow
-    or shrink — position stays locked to Paula's baked footprint.
+    Returns RGBA where glyph pixels are filled with ``fill_rgb`` and fabric /
+    background pixels stay fully transparent — never paints a solid rectangle
+    over the bag photo. White ink is detected at high luminance, then the mask
+    is dilated a couple of pixels so anti-aliased fringes are covered without
+    pulling mid-tone fabrics (Sage ≈ lum 145) into the fill.
     """
     rgba = image.convert("RGBA")
     arr = np.array(rgba)
     rgb = arr[:, :, :3].astype(np.float32)
     lum = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
-    dark_fill = max(int(fill_rgb[0]), int(fill_rgb[1]), int(fill_rgb[2])) < 80
-    if dark_fill:
-        # Dark print on dark fabric: kill white AA halos — treat mid-gray
-        # fringes as ink so #000000 does not leave a pale outline.
-        t0, t1 = 95.0, 210.0
-        weight = np.clip((lum - t0) / max(1.0, t1 - t0), 0.0, 1.0)
-        weight = np.where(lum >= 150.0, 1.0, weight)
-        ink = lum >= t0
-    else:
-        t0 = float(bright_threshold) - 35.0
-        t1 = 245.0
-        weight = np.clip((lum - t0) / max(1.0, t1 - t0), 0.0, 1.0)
-        ink = lum >= float(bright_threshold) - 35.0
-    if not np.any(ink):
-        return rgba
-    out = rgb.copy()
-    for c, v in enumerate(fill_rgb):
-        ch = out[:, :, c]
-        w = weight
-        out[:, :, c] = np.where(ink, ch * (1.0 - w) + float(v) * w, ch)
-    arr[:, :, :3] = np.clip(out, 0, 255).astype(np.uint8)
-    return Image.fromarray(arr, "RGBA")
+    thr = float(bright_threshold)
+    hard = (lum >= thr).astype(np.uint8) * 255
+    if not hard.any():
+        return Image.new("RGBA", rgba.size, (0, 0, 0, 0))
+    # Expand 1–2 px so soft AA edges hitch a ride; fabric stays outside.
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    dilated = cv2.dilate(hard, kernel, iterations=2)
+    dist_inside = cv2.distanceTransform((dilated > 0).astype(np.uint8), cv2.DIST_L2, 3)
+    # Full opacity on true white + near core; taper only on the dilated rim.
+    alpha = np.zeros(lum.shape, dtype=np.float32)
+    alpha[hard > 0] = 255.0
+    rim = (dilated > 0) & (hard == 0)
+    if np.any(rim):
+        # Rim pixels that are still brighter than local fabric get strong cover.
+        fabric_ref = float(np.percentile(lum[dilated == 0], 50)) if np.any(dilated == 0) else 0.0
+        rim_ok = rim & (lum >= max(150.0, fabric_ref + 25.0))
+        alpha[rim_ok] = 255.0
+        # Very soft leftover rim fades out.
+        rim_soft = rim & ~rim_ok
+        if np.any(rim_soft):
+            alpha[rim_soft] = np.clip(dist_inside[rim_soft] / 2.0 * 180.0, 0.0, 180.0)
+    out = np.zeros_like(arr)
+    out[:, :, 0] = int(fill_rgb[0])
+    out[:, :, 1] = int(fill_rgb[1])
+    out[:, :, 2] = int(fill_rgb[2])
+    out[:, :, 3] = np.clip(alpha, 0, 255).astype(np.uint8)
+    return Image.fromarray(out, "RGBA")
 
 
 def backpack_pdf_baked_gs_cover(placement: str | None = None) -> tuple[float, float, float, float]:

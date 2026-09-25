@@ -509,13 +509,13 @@ class WorksheetExporter:
         job: JobSpec,
         logo: PILImage.Image | None,
     ) -> bytes:
-        """Venture Dry Pack — Paula page + in-place logo fill + Artwork/swatch.
+        """Venture Dry Pack — Paula page + dual ink-only Proper recolor + Artwork/swatch.
 
-        ``BACKPACK_STATIC_PAGE_MAP`` supplies the 1:1 page. Front View / tech-pack
-        coordinates stay frozen; when ``Logo / graphic color`` is Black or White C,
-        only the baked Proper ink in Paula's front-logo box is recolored in place
-        (no bbox / offset changes). Artwork card + Logo/Graphic Colors swatch still
-        follow the sidebar. Falls back to the raster pipeline if the v2 PDF is missing.
+        ``BACKPACK_STATIC_PAGE_MAP`` supplies the 1:1 page. When Logo / graphic
+        color is Black C, a transparent overlay recolors baked Proper ink on
+        Front View and the Sizing & Dimensions tech pack (no fabric rectangles).
+        Artwork card + Logo/Graphic Colors swatch still follow the sidebar.
+        Falls back to the raster pipeline if the v2 PDF is missing.
         """
         import fitz
 
@@ -543,9 +543,9 @@ class WorksheetExporter:
         page = doc[0]
         spec = self._page_spec("backpack", 1)
 
-        # In-place Front View Proper fill (locked Paula box — no stamp/heal).
+        # In-place Proper fill on Front View + Sizing & Dimensions (ink-only).
         if fill is not None and fill != (255, 255, 255):
-            self._pdf_recolor_front_logo_inplace(page, job, fill)
+            self._pdf_recolor_baked_logos_inplace(page, job, fill)
 
         # Artwork preview box (black-on-light / white-on-dark).
         art_slot = next(
@@ -745,39 +745,67 @@ class WorksheetExporter:
             color=self._pdf_rgb(NAVY),
         )
 
+    def _pdf_recolor_baked_logos_inplace(
+        self,
+        page,
+        job: JobSpec,
+        fill_rgb: tuple[int, int, int],
+    ) -> None:
+        """Recolor Paula's baked Proper ink on Front View + tech-pack GS.
+
+        Uses a transparent PNG overlay (glyph pixels only) so mid-tone fabrics
+        like Sage never get a filled rectangle. Boxes stay locked to the static
+        page map — no heal, wipe, or coordinate shifts.
+        """
+        place = resolve_backpack_placement(job.panel_config)
+        place_key = str(place.get("key") or "upper_center")
+        front = get_backpack_pdf_front_slot(job.fabric_name, place_key)
+        # Prefer cover (tight pad around glyphs) so tip-of-letter ink is not clipped;
+        # overlay stays transparent outside white ink so fabric is never filled.
+        front_box = front.get("cover") or front.get("box")
+        if front_box:
+            # +10pt pad catches glyph tips that sit just outside the measured cover.
+            fx, fy, fw, fh = (float(v) for v in front_box)
+            front_box = (fx - 10.0, fy - 8.0, fw + 20.0, fh + 16.0)
+            self._pdf_recolor_logo_ink_box(page, front_box, fill_rgb)
+        gs_box = backpack_pdf_baked_gs_cover(place_key)
+        if gs_box:
+            self._pdf_recolor_logo_ink_box(page, gs_box, fill_rgb)
+
+    def _pdf_recolor_logo_ink_box(
+        self,
+        page,
+        box: tuple[float, float, float, float],
+        fill_rgb: tuple[int, int, int],
+    ) -> None:
+        """Overlay ``fill_rgb`` on near-white ink inside ``box`` (transparent elsewhere)."""
+        import fitz
+
+        x, y, w, h = (float(v) for v in box)
+        if w < 1 or h < 1:
+            return
+        rect = fitz.Rect(x, y, x + w, y + h)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect, alpha=False)
+        img = PILImage.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        overlay = recolor_bright_ink_inplace(img, fill_rgb)
+        # Skip empty overlays (no white ink in this box).
+        if overlay.getchannel("A").getbbox() is None:
+            return
+        page.insert_image(
+            rect,
+            stream=self._pdf_png_bytes(overlay),
+            keep_proportion=False,
+            overlay=True,
+        )
+
     def _pdf_recolor_front_logo_inplace(
         self,
         page,
         job: JobSpec,
         fill_rgb: tuple[int, int, int],
     ) -> None:
-        """Recolor baked Front View Proper ink inside Paula's locked logo box.
-
-        No heal, wipe, or re-fit — only swaps near-white glyph pixels to
-        ``fill_rgb`` so X/Y/scale stay exactly as on the static page map.
-        """
-        import fitz
-
-        place = resolve_backpack_placement(job.panel_config)
-        place_key = str(place.get("key") or "upper_center")
-        front = get_backpack_pdf_front_slot(job.fabric_name, place_key)
-        box = front.get("box") or front.get("cover")
-        if not box:
-            return
-        x, y, w, h = (float(v) for v in box)
-        if w < 1 or h < 1:
-            return
-        rect = fitz.Rect(x, y, x + w, y + h)
-        # 2× sample keeps AA edges; write back into the same PDF-point rect.
-        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect, alpha=False)
-        img = PILImage.frombytes("RGB", (pix.width, pix.height), pix.samples)
-        recolored = recolor_bright_ink_inplace(img, fill_rgb).convert("RGB")
-        page.insert_image(
-            rect,
-            stream=self._pdf_png_bytes(recolored),
-            keep_proportion=False,
-            overlay=True,
-        )
+        """Backward-compatible alias — Front View + GS dual recolor."""
+        self._pdf_recolor_baked_logos_inplace(page, job, fill_rgb)
 
     def _pdf_overlay_artwork_card(
         self,
