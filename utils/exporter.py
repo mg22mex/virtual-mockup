@@ -408,9 +408,8 @@ class WorksheetExporter:
         """Official stamped pages, scaled for the on-screen proof."""
         family = self._job_family(job)
         if family == "backpack" and backpack_v2_pdf_path() is not None:
-            _ = logo  # static Paula page — never stamp client art
             return self._preview_backpack_pdf_template(
-                job, None, max_width=max_width, quality=quality
+                job, logo, max_width=max_width, quality=quality
             )
         return self._preview_standard_canvas(
             job, logo, max_width=max_width, quality=quality
@@ -480,7 +479,7 @@ class WorksheetExporter:
     def build_pdf(self, job: JobSpec, logo: PILImage.Image | None) -> bytes:
         family = self._job_family(job)
         if family == "backpack":
-            return self.render_backpack_with_pdf_template(job, None)
+            return self.render_backpack_with_pdf_template(job, logo)
         return self.render_standard_canvas(job, logo)
 
     def render_standard_canvas(self, job: JobSpec, logo: PILImage.Image | None) -> bytes:
@@ -508,19 +507,25 @@ class WorksheetExporter:
         job: JobSpec,
         logo: PILImage.Image | None,
     ) -> bytes:
-        """Venture Dry Pack — exact Paula v2 Option page (fabric × placement).
+        """Venture Dry Pack — Paula page + Artwork box / logo-swatch overlays only.
 
-        Canvas is an unmodified ``insert_pdf`` of ``BACKPACK_STATIC_PAGE_MAP``.
-        Fabric / logo color affect only UI labels, export ticket text, and PDF
-        file metadata keywords — never stamps, tints, or Y-offsets on the page.
+        ``BACKPACK_STATIC_PAGE_MAP`` supplies the 1:1 page (Front View + tech pack
+        untouched). Only the Design Placement Artwork card and the bottom
+        Logo/Graphic Colors swatch + label follow ``Logo / graphic color``.
         Falls back to the raster Illustrator pipeline when the v2 PDF is missing.
         """
         import fitz
 
-        _ = logo
         pdf_path = backpack_v2_pdf_path()
         if pdf_path is None:
-            return self.render_standard_canvas(job, None)
+            return self.render_standard_canvas(job, logo)
+
+        mark = None
+        if logo is not None:
+            fill = None
+            if job.logo_color_name != "Match uploaded art":
+                fill = logo_color_rgb(job.logo_color_name)
+            mark = self.renderer.prepare_logo(logo, job.resolved_knockout(), fill_rgb=fill)
 
         page_index = resolve_backpack_v2_page_index(job.panel_config, job.fabric_name)
         src = fitz.open(pdf_path)
@@ -528,12 +533,24 @@ class WorksheetExporter:
             if page_index < 0 or page_index >= src.page_count:
                 page_index = 0
             doc = fitz.open()
-            # 1:1 page copy — Paula layout, Option titles, and logos untouched.
             doc.insert_pdf(src, from_page=page_index, to_page=page_index)
         finally:
             src.close()
 
-        # File metadata only (does not paint on the page canvas).
+        page = doc[0]
+        spec = self._page_spec("backpack", 1)
+
+        # Artwork preview box only (not Front View / GS diagram).
+        art_slot = next(
+            (s for s in spec.get("logos") or [] if str(s.get("erase") or "") == "artwork"),
+            None,
+        )
+        if art_slot and mark is not None:
+            self._pdf_overlay_artwork_card(page, art_slot, mark, job)
+
+        # Logo/Graphic Colors swatch + label only (fabric swatch stays Paula's).
+        self._pdf_overlay_logo_swatch(page, spec, job)
+
         meta = doc.metadata or {}
         meta.update(
             {
@@ -690,6 +707,35 @@ class WorksheetExporter:
                 fontname="hebo",
                 color=self._pdf_rgb(NAVY),
             )
+
+    def _pdf_overlay_logo_swatch(self, page, spec: dict, job: JobSpec) -> None:
+        """Update only Logo/Graphic Colors swatch + label (backpack static path)."""
+        colors = spec.get("colors")
+        if not colors or "logo_swatch" not in colors or "logo_label" not in colors:
+            return
+        logo_rgb = logo_color_rgb(job.logo_color_name)
+        # Match uploaded art: neutral mid-gray chip (not a print color).
+        token = " ".join(str(job.logo_color_name or "").lower().split())
+        if "match uploaded" in token:
+            logo_rgb = (128, 128, 128)
+        self._pdf_fill_rect(page, colors["logo_swatch"], logo_rgb)
+        if max(logo_rgb) > 210:
+            page.draw_rect(
+                self._pdf_rect(colors["logo_swatch"]),
+                color=self._pdf_rgb((35, 35, 35)),
+                fill=None,
+                width=1.0,
+            )
+        label_box = colors["logo_label"]
+        self._pdf_fill_rect(page, label_box, (255, 255, 255))
+        x, y, _w, h = label_box
+        page.insert_text(
+            (x, y + h * 0.72),
+            logo_sheet_label(job.logo_color_name),
+            fontsize=float(colors.get("font_pt") or 32),
+            fontname="hebo",
+            color=self._pdf_rgb(NAVY),
+        )
 
     def _pdf_overlay_artwork_card(
         self,
